@@ -1,0 +1,113 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f3f6f8;
+  --foreground: #0b2436;
+
+  --color-brand-deep: #073b66;
+  --color-brand: #0d6ebe;
+  --color-brand-mid: #1487d6;
+  --color-brand-light: #eaf4fc;
+  --color-ink: #0b2436;
+  --color-sub: #5a7385;
+  --color-success: #1a9d5c;
+  --color-warning: #d97706;
+  --color-danger: #c0392b;
+  --color-coupon-start: #e08a1f;
+  --color-coupon-end: #b5540f;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-brand-deep: var(--color-brand-deep);
+  --color-brand: var(--color-brand);
+  --color-brand-mid: var(--color-brand-mid);
+  --color-brand-light: var(--color-brand-light);
+  --color-ink: var(--color-ink);
+  --color-sub: var(--color-sub);
+  --color-success: var(--color-success);
+  --color-warning: var(--color-warning);
+  --color-danger: var(--color-danger);
+
+  --font-sans: var(--font-tajawal);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+@keyframes idlib-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes idlib-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes idlib-scale-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+@keyframes idlib-scale-out {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.95);
+  }
+}
+
+.dialog-overlay[data-state="open"] {
+  animation: idlib-fade-in 150ms ease-out;
+}
+.dialog-overlay[data-state="closed"] {
+  animation: idlib-fade-out 150ms ease-in;
+}
+.dialog-content[data-state="open"] {
+  animation: idlib-scale-in 180ms ease-out forwards;
+}
+.dialog-content[data-state="closed"] {
+  animation: idlib-scale-out 150ms ease-in forwards;
+}
+
+@layer utilities {
+  .bg-brand-gradient {
+    background: linear-gradient(150deg, #0d6ebe 0%, #0a5596 55%, #073b66 100%);
+  }
+
+  .bg-cover-gradient {
+    background: linear-gradient(135deg, #1487d6, #073b66);
+  }
+
+  .bg-coupon-gradient {
+    background: linear-gradient(135deg, var(--color-coupon-start), var(--color-coupon-end));
+  }
+
+  .public-card-shadow {
+    box-shadow: 0 20px 50px rgba(7, 59, 102, 0.15);
+  }
+}
+
+/* Arabic numerals in inputs/number fields should stay Latin-digit for clarity in data entry */
+input[type="number"] {
+  font-variant-numeric: tabular-nums;
+}
