@@ -116,9 +116,10 @@ This app is built to deploy on **Vercel** with a managed Postgres provider
 pooled connection string and `DIRECT_URL` to the direct one) and an
 S3-compatible bucket such as **Cloudflare R2** for uploaded images.
 
-- Run `npm run db:deploy` against the production database before or during
-  your first deploy (e.g. as part of your CI/CD pipeline), then visit
-  `/setup` once to create the real Super Admin.
+- `npm run build` runs `prisma migrate deploy` automatically before `next
+  build`, so every Vercel deploy applies any pending migrations against
+  `DIRECT_URL` with no separate release step. After your first deploy
+  succeeds, visit `/setup` once to create the real Super Admin.
 - Payment status (paid/unpaid/late) is tracked and toggled manually from the
   admin subscriptions screen — there is no payment gateway integration.
 - Notifications are in-app only (a notification center in each dashboard) —
