@@ -8,6 +8,14 @@ export const metadata = {
   title: "تسجيل الدخول",
 };
 
+// Must never be statically cached: the isSetupComplete()/getCurrentUser()
+// checks below depend on live DB state, but if the build-time render takes
+// the isSetupComplete() branch it returns before ever touching cookies() —
+// the one call Next's dynamic-rendering heuristic would otherwise detect on
+// its own. Without this, a build against a freshly-migrated empty database
+// freezes this page as a permanent static redirect to /setup.
+export const dynamic = "force-dynamic";
+
 export default async function LoginPage({
   searchParams,
 }: {
