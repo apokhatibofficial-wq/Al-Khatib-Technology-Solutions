@@ -4,8 +4,8 @@ import { AddUserDialog } from "./add-user-dialog";
 import { toggleUserActiveAction } from "./actions";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/page-header";
+import { SearchForm } from "@/components/search-form";
 import { requirePermission } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { PERMISSIONS } from "@/lib/rbac";
@@ -58,9 +58,7 @@ export default async function AdminUsersPage({
         action={<AddUserDialog professions={professions} activityCategories={activityCategories} />}
       />
 
-      <form method="GET" className="mb-5 max-w-xs">
-        <Input name="q" defaultValue={search} placeholder="بحث بالاسم..." />
-      </form>
+      <SearchForm defaultValue={search} placeholder="بحث بالاسم..." />
 
       {users.length === 0 ? (
         <EmptyState

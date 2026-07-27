@@ -7,6 +7,11 @@ export const metadata = {
   title: "الإعداد الأولي",
 };
 
+// Must never be statically cached: correctness depends on live DB state
+// (whether a super admin already exists), which no build-time render could
+// know about.
+export const dynamic = "force-dynamic";
+
 export default async function SetupPage() {
   if (await isSetupComplete()) {
     redirect("/login");

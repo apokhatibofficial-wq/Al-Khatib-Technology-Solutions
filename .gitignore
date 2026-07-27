@@ -40,6 +40,21 @@ yarn-error.log*
 /scripts/.dev-fill-setup.mjs
 /scripts/.dev-login-and-shot.mjs
 /scripts/.dev-test-adduser.mjs
+/scripts/.dev-test-subadmin.mjs
+/scripts/.dev-test-rbac.mjs
+/scripts/.dev-test-status.mjs
+/scripts/.dev-test-dashboard.mjs
+/scripts/.dev-test-product-only.mjs
+/scripts/.dev-test-messages.mjs
+/scripts/.dev-test-public.mjs
+/scripts/.dev-test-business-public.mjs
+/scripts/.dev-test-upload-graceful.mjs
+/scripts/.dev-test-pwa.mjs
+/scripts/.dev-test-offline.mjs
+/scripts/.dev-test-coldstart.mjs
+/scripts/.dev-zoom-switch.mjs
+/scripts/.dev-inspect-switch.mjs
+/scripts/.dev-find-css-rule.mjs
 
 # generated Prisma client (regenerated via `prisma generate` / postinstall)
 /src/generated/

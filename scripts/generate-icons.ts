@@ -6,8 +6,6 @@ const root = path.resolve(import.meta.dirname, "..");
 const source = path.join(root, "scripts", "brand-mark.svg");
 
 async function main() {
-  const svg = await sharp(source).png();
-
   await mkdir(path.join(root, "public", "icons"), { recursive: true });
 
   const targets: { file: string; size: number }[] = [

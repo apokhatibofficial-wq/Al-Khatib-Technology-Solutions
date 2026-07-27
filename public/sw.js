@@ -65,28 +65,38 @@ self.addEventListener("fetch", (event) => {
     if (isPrivateArea(url)) return;
 
     event.respondWith(
-      fetch(request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(RUNTIME_CACHE).then((cache) => cache.put(request, copy));
+      (async () => {
+        try {
+          const response = await fetch(request);
+          const cache = await caches.open(RUNTIME_CACHE);
+          // waitUntil extends the worker's lifetime so this write isn't cut
+          // off once the response above has already been delivered.
+          event.waitUntil(cache.put(request, response.clone()));
           return response;
-        })
-        .catch(async () => (await caches.match(request)) || (await caches.match(OFFLINE_URL))),
+        } catch {
+          return (await caches.match(request)) || (await caches.match(OFFLINE_URL));
+        }
+      })(),
     );
     return;
   }
 
   if (isStaticAsset(url)) {
     event.respondWith(
-      caches.match(request).then((cached) => {
-        const network = fetch(request)
-          .then((response) => {
-            caches.open(SHELL_CACHE).then((cache) => cache.put(request, response.clone()));
+      (async () => {
+        const cached = await caches.match(request);
+        const networkFetch = (async () => {
+          try {
+            const response = await fetch(request);
+            const cache = await caches.open(SHELL_CACHE);
+            event.waitUntil(cache.put(request, response.clone()));
             return response;
-          })
-          .catch(() => cached);
-        return cached || network;
-      }),
+          } catch {
+            return cached;
+          }
+        })();
+        return cached || networkFetch;
+      })(),
     );
   }
 });

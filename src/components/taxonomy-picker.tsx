@@ -15,15 +15,17 @@ export function TaxonomyPicker({
   addLabel,
   options,
   createAction,
+  defaultValue,
 }: {
   name: string;
   placeholder: string;
   addLabel: string;
   options: Option[];
   createAction: (name: string) => Promise<CreateResult>;
+  defaultValue?: string | null;
 }) {
   const [items, setItems] = useState(options);
-  const [selected, setSelected] = useState(options[0]?.id ?? "");
+  const [selected, setSelected] = useState(defaultValue || options[0]?.id || "");
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
   const [error, setError] = useState<string>();
