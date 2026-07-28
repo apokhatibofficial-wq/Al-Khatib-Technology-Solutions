@@ -24,7 +24,12 @@ export default async function EditorAppearancePage({ params }: { params: Promise
         hasUnpublishedChanges={page.hasUnpublishedChanges}
       />
       <div className="rounded-2xl border border-[#e7edf1] bg-white p-6">
-        <AppearanceForm userId={page.userId} brandColor={page.brandColor} layoutTemplate={page.layoutTemplate} />
+        <AppearanceForm
+          userId={page.userId}
+          brandColor={page.brandColor}
+          layoutTemplate={page.layoutTemplate}
+          accountType={page.type}
+        />
       </div>
     </div>
   );

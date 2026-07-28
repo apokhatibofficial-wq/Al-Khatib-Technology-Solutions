@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ClassicLayout } from "@/components/public/layouts/classic-layout";
 import { ListLayout } from "@/components/public/layouts/list-layout";
 import { MinimalLayout } from "@/components/public/layouts/minimal-layout";
+import { PremiumLayout } from "@/components/public/layouts/premium-layout";
 import { VisitTracker } from "@/components/public/visit-tracker";
 import { prisma } from "@/lib/prisma";
 import type { PublicPageSnapshot } from "@/lib/page-snapshot";
@@ -70,7 +71,13 @@ export default async function PublicPage({
   const showWatermark = snapshot.showWatermark && (await isWatermarkGloballyEnabled());
 
   const LayoutComponent =
-    snapshot.layoutTemplate === "list" ? ListLayout : snapshot.layoutTemplate === "minimal" ? MinimalLayout : ClassicLayout;
+    snapshot.layoutTemplate === "premium" && snapshot.type === "BUSINESS"
+      ? PremiumLayout
+      : snapshot.layoutTemplate === "list"
+        ? ListLayout
+        : snapshot.layoutTemplate === "minimal"
+          ? MinimalLayout
+          : ClassicLayout;
 
   return (
     <div className="flex min-h-screen flex-col items-center bg-[#eef2f5] px-4 py-10">

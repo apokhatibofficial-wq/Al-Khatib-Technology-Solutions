@@ -17,7 +17,7 @@ export const appearanceSchema = z.object({
     .string()
     .trim()
     .regex(/^#[0-9a-fA-F]{6}$/, "لون غير صالح"),
-  layoutTemplate: z.enum(["classic", "list", "minimal"]),
+  layoutTemplate: z.enum(["classic", "list", "minimal", "premium"]),
 });
 
 export const contactButtonKinds = [

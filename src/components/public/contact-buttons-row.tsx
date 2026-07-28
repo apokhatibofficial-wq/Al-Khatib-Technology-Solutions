@@ -1,7 +1,7 @@
 import { Camera, Link2, MessageCircle, Phone, Send, Users } from "lucide-react";
 import type { PublicPageSnapshot } from "@/lib/page-snapshot";
 
-const KIND_META: Record<string, { label: string; icon: typeof Phone; href: (value: string) => string }> = {
+export const CONTACT_KIND_META: Record<string, { label: string; icon: typeof Phone; href: (value: string) => string }> = {
   CALL: { label: "اتصال", icon: Phone, href: (v) => `tel:${v}` },
   WHATSAPP: { label: "واتساب", icon: MessageCircle, href: (v) => `https://wa.me/${v.replace(/[^0-9]/g, "")}` },
   INSTAGRAM: { label: "إنستغرام", icon: Camera, href: (v) => (v.startsWith("http") ? v : `https://instagram.com/${v}`) },
@@ -23,7 +23,7 @@ export function ContactButtonsRow({
   return (
     <div className="flex flex-wrap gap-2">
       {active.map((button, index) => {
-        const meta = KIND_META[button.kind];
+        const meta = CONTACT_KIND_META[button.kind];
         if (!meta) return null;
         const Icon = meta.icon;
         const label = button.label || meta.label;

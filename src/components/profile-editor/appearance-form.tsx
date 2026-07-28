@@ -14,19 +14,28 @@ const TEMPLATES = [
   { key: "minimal", label: "مينيمال", description: "تصميم مركزي هادئ بأقل قدر من العناصر" },
 ] as const;
 
+const PREMIUM_TEMPLATE = {
+  key: "premium",
+  label: "احترافي",
+  description: "شاشة استهلال متحركة للشعار، وعرض أكثر تميّزًا للفئات والمنتجات — لحسابات الأعمال",
+} as const;
+
 export function AppearanceForm({
   userId,
   brandColor,
   layoutTemplate,
+  accountType,
 }: {
   userId: string;
   brandColor: string;
   layoutTemplate: string;
+  accountType: "INDIVIDUAL" | "BUSINESS";
 }) {
   const boundAction = updateAppearanceAction.bind(null, userId);
   const [state, formAction, isPending] = useActionState(boundAction, undefined);
   const [color, setColor] = useState(brandColor);
   const [template, setTemplate] = useState(layoutTemplate);
+  const templates = accountType === "BUSINESS" ? [...TEMPLATES, PREMIUM_TEMPLATE] : TEMPLATES;
 
   return (
     <form action={formAction} className="flex flex-col gap-6">
@@ -64,8 +73,8 @@ export function AppearanceForm({
 
       <div className="flex flex-col gap-2">
         <Label>هيكلية عرض الصفحة</Label>
-        <div className="grid gap-3 sm:grid-cols-3">
-          {TEMPLATES.map((t) => (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {templates.map((t) => (
             <button
               key={t.key}
               type="button"

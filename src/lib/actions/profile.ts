@@ -143,6 +143,10 @@ export async function updateAppearanceAction(
   const page = await prisma.publicPage.findUnique({ where: { userId } });
   if (!page) return { error: "الصفحة غير موجودة" };
 
+  if (parsed.data.layoutTemplate === "premium" && page.type !== "BUSINESS") {
+    return { fieldErrors: { layoutTemplate: "هذه الهيكلية متاحة لحسابات الأعمال فقط" } };
+  }
+
   await prisma.publicPage.update({
     where: { id: page.id },
     data: { brandColor: parsed.data.brandColor, layoutTemplate: parsed.data.layoutTemplate },

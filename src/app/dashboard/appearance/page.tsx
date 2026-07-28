@@ -23,7 +23,12 @@ export default async function AppearancePage() {
         showCelebration
       />
       <div className="rounded-2xl border border-[#e7edf1] bg-white p-6">
-        <AppearanceForm userId={user.id} brandColor={page.brandColor} layoutTemplate={page.layoutTemplate} />
+        <AppearanceForm
+          userId={user.id}
+          brandColor={page.brandColor}
+          layoutTemplate={page.layoutTemplate}
+          accountType={page.type}
+        />
       </div>
     </div>
   );
