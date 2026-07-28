@@ -1,14 +1,9 @@
 "use client";
 
-import { Dancing_Script } from "next/font/google";
+import Image from "next/image";
 import Link from "next/link";
 import { motion, useReducedMotion, type Variants } from "motion/react";
 import { Button } from "@/components/ui/button";
-
-const dancingScript = Dancing_Script({
-  subsets: ["latin"],
-  weight: ["600", "700"],
-});
 
 const contactPhone = process.env.NEXT_PUBLIC_CONTACT_PHONE;
 const contactWhatsapp = process.env.NEXT_PUBLIC_CONTACT_WHATSAPP;
@@ -445,9 +440,7 @@ export default function LandingPage() {
             أداة نبنيها بعناية، ونطورها باستمرار، لخدمة مجتمعنا ومستقبله الرقمي.
           </p>
           <div className="mt-9 flex flex-col items-center">
-            <span className={`${dancingScript.className} text-5xl leading-none text-brand-deep`}>
-              Abdulrahman Khatib
-            </span>
+            <Image src="/signature.png" alt="توقيع" width={320} height={105} className="h-auto w-[220px] sm:w-[280px]" />
             <span className="mt-2 text-sm font-bold text-sub">مؤسس شركة الخطيب للحلول التقنية</span>
           </div>
         </motion.div>
