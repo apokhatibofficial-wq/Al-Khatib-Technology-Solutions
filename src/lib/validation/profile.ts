@@ -20,6 +20,12 @@ export const appearanceSchema = z.object({
   layoutTemplate: z.enum(["classic", "list", "minimal", "premium"]),
 });
 
+export const splashScreenSchema = z.object({
+  splashEnabled: z.string().optional(),
+  splashImageUrl: z.string().trim().optional().or(z.literal("")),
+  splashDurationSeconds: z.coerce.number().int().min(3, "3 إلى 5 ثواني").max(5, "3 إلى 5 ثواني"),
+});
+
 export const contactButtonKinds = [
   "CALL",
   "WHATSAPP",

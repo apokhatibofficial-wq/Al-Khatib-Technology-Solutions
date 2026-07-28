@@ -5,7 +5,12 @@ import { markPageDirty } from "@/lib/actions/publish";
 import { logAudit } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 import { authorizeProfileEdit } from "@/lib/profile-access";
-import { appearanceSchema, businessCompanySchema, individualProfileSchema } from "@/lib/validation/profile";
+import {
+  appearanceSchema,
+  businessCompanySchema,
+  individualProfileSchema,
+  splashScreenSchema,
+} from "@/lib/validation/profile";
 
 type FieldErrors<T extends string> = Partial<Record<T, string>>;
 
@@ -165,9 +170,59 @@ export async function updateAppearanceAction(
   return { success: true };
 }
 
+export type SplashScreenFormState =
+  | { error?: string; fieldErrors?: FieldErrors<"splashDurationSeconds">; success?: boolean }
+  | undefined;
+
+export async function updateSplashScreenAction(
+  userId: string,
+  _prevState: SplashScreenFormState,
+  formData: FormData,
+): Promise<SplashScreenFormState> {
+  const actor = await authorizeProfileEdit(userId);
+
+  const parsed = splashScreenSchema.safeParse({
+    splashEnabled: formData.get("splashEnabled") ?? undefined,
+    splashDurationSeconds: formData.get("splashDurationSeconds"),
+  });
+
+  if (!parsed.success) {
+    const fieldErrors: FieldErrors<"splashDurationSeconds"> = {};
+    for (const issue of parsed.error.issues) {
+      const key = issue.path[0] as keyof typeof fieldErrors;
+      if (key && !fieldErrors[key]) fieldErrors[key] = issue.message;
+    }
+    return { fieldErrors };
+  }
+
+  const page = await prisma.publicPage.findUnique({ where: { userId } });
+  if (!page) return { error: "الصفحة غير موجودة" };
+  if (page.type !== "BUSINESS") return { error: "غير متاح لهذا النوع من الحسابات" };
+
+  await prisma.businessProfile.update({
+    where: { pageId: page.id },
+    data: {
+      splashEnabled: parsed.data.splashEnabled === "on",
+      splashDurationSeconds: parsed.data.splashDurationSeconds,
+    },
+  });
+  await markPageDirty(page.id);
+
+  await logAudit({
+    actorId: actor.id,
+    targetUserId: userId,
+    action: "profile.update",
+    summary: actor.id === userId ? "عدّل إعدادات شاشة البدء" : "عدّل إعدادات شاشة البدء نيابة عن المستخدم",
+  });
+
+  revalidatePath("/dashboard/appearance");
+  revalidatePath(`/admin/editor`);
+  return { success: true };
+}
+
 export async function updateImageFieldAction(
   userId: string,
-  field: "avatarUrl" | "coverUrl" | "logoUrl",
+  field: "avatarUrl" | "coverUrl" | "logoUrl" | "splashImageUrl",
   url: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const actor = await authorizeProfileEdit(userId);
@@ -178,9 +233,9 @@ export async function updateImageFieldAction(
   });
   if (!page) return { ok: false, error: "الصفحة غير موجودة" };
 
-  if (field === "logoUrl") {
+  if (field === "logoUrl" || field === "splashImageUrl") {
     if (!page.businessProfile) return { ok: false, error: "غير متاح لهذا النوع من الحسابات" };
-    await prisma.businessProfile.update({ where: { pageId: page.id }, data: { logoUrl: url } });
+    await prisma.businessProfile.update({ where: { pageId: page.id }, data: { [field]: url } });
   } else if (page.type === "INDIVIDUAL" && page.individualProfile) {
     await prisma.individualProfile.update({ where: { pageId: page.id }, data: { [field]: url } });
   } else if (page.type === "BUSINESS" && page.businessProfile) {

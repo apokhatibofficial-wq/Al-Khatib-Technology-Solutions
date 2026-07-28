@@ -4,6 +4,7 @@ import { ClassicLayout } from "@/components/public/layouts/classic-layout";
 import { ListLayout } from "@/components/public/layouts/list-layout";
 import { MinimalLayout } from "@/components/public/layouts/minimal-layout";
 import { PremiumLayout } from "@/components/public/layouts/premium-layout";
+import { SplashScreen } from "@/components/public/splash-screen";
 import { VisitTracker } from "@/components/public/visit-tracker";
 import { prisma } from "@/lib/prisma";
 import type { PublicPageSnapshot } from "@/lib/page-snapshot";
@@ -79,12 +80,29 @@ export default async function PublicPage({
           ? MinimalLayout
           : ClassicLayout;
 
-  return (
+  const content = (
     <div className="flex min-h-screen flex-col items-center bg-[#eef2f5] px-4 py-10">
       <VisitTracker slug={slug} source={source} />
       <LayoutComponent snapshot={snapshot} coupon={coupon} showWatermark={showWatermark} />
     </div>
   );
+
+  if (snapshot.type === "BUSINESS" && snapshot.business?.splashEnabled && snapshot.business.splashImageUrl) {
+    return (
+      <SplashScreen
+        imageUrl={snapshot.business.splashImageUrl}
+        logoUrl={snapshot.business.logoUrl ?? snapshot.business.avatarUrl}
+        companyName={snapshot.business.companyName}
+        durationSeconds={snapshot.business.splashDurationSeconds}
+        buttons={snapshot.contactButtons}
+        brandColor={snapshot.brandColor}
+      >
+        {content}
+      </SplashScreen>
+    );
+  }
+
+  return content;
 }
 
 async function isWatermarkGloballyEnabled(): Promise<boolean> {

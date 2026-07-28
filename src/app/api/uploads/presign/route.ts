@@ -3,7 +3,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { hasPermission, isAdminRole, isCustomerRole, PERMISSIONS } from "@/lib/rbac";
 import { createPresignedUpload } from "@/lib/storage";
 
-const PROFILE_FOLDERS = new Set(["avatars", "covers", "logos", "products"]);
+const PROFILE_FOLDERS = new Set(["avatars", "covers", "logos", "products", "splash"]);
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();

@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { AppearanceForm } from "@/components/profile-editor/appearance-form";
+import { SplashScreenForm } from "@/components/profile-editor/splash-screen-form";
 import { PublishBar } from "@/components/profile-editor/publish-bar";
 import { PageHeader } from "@/components/page-header";
 import { getEditablePageByUsername } from "@/lib/editable-page";
@@ -31,6 +32,17 @@ export default async function EditorAppearancePage({ params }: { params: Promise
           accountType={page.type}
         />
       </div>
+      {page.type === "BUSINESS" && page.businessProfile && (
+        <div className="mt-6 rounded-2xl border border-[#e7edf1] bg-white p-6">
+          <h3 className="mb-4 text-sm font-extrabold text-ink">شاشة البدء</h3>
+          <SplashScreenForm
+            userId={page.userId}
+            splashEnabled={page.businessProfile.splashEnabled}
+            splashImageUrl={page.businessProfile.splashImageUrl}
+            splashDurationSeconds={page.businessProfile.splashDurationSeconds}
+          />
+        </div>
+      )}
     </div>
   );
 }

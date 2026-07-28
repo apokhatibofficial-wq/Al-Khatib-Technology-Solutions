@@ -201,17 +201,20 @@ model IndividualProfile {
 }
 
 model BusinessProfile {
-  id                 String            @id @default(cuid())
-  pageId             String            @unique
-  page               PublicPage        @relation(fields: [pageId], references: [id], onDelete: Cascade)
-  companyName        String
-  activityCategoryId String?
-  activityCategory   ActivityCategory? @relation(fields: [activityCategoryId], references: [id], onDelete: SetNull)
-  description        String            @default("")
-  logoUrl            String?
-  avatarUrl          String?
-  coverUrl           String?
-  updatedAt          DateTime          @updatedAt
+  id                    String            @id @default(cuid())
+  pageId                String            @unique
+  page                  PublicPage        @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  companyName           String
+  activityCategoryId    String?
+  activityCategory      ActivityCategory? @relation(fields: [activityCategoryId], references: [id], onDelete: SetNull)
+  description           String            @default("")
+  logoUrl               String?
+  avatarUrl             String?
+  coverUrl              String?
+  splashEnabled         Boolean           @default(false)
+  splashImageUrl        String?
+  splashDurationSeconds Int               @default(3)
+  updatedAt             DateTime          @updatedAt
 
   categories ProductCategory[]
   products   Product[]

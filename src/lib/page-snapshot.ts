@@ -30,6 +30,9 @@ export type PublicBusinessSnapshot = {
   logoUrl: string | null;
   avatarUrl: string | null;
   coverUrl: string | null;
+  splashEnabled: boolean;
+  splashImageUrl: string | null;
+  splashDurationSeconds: number;
   categories: { id: string; name: string; sortOrder: number }[];
   products: PublicProduct[];
 };
@@ -130,6 +133,9 @@ export function buildPageSnapshot(page: FullPage): PublicPageSnapshot {
       logoUrl: page.businessProfile.logoUrl,
       avatarUrl: page.businessProfile.avatarUrl,
       coverUrl: page.businessProfile.coverUrl,
+      splashEnabled: page.businessProfile.splashEnabled,
+      splashImageUrl: page.businessProfile.splashImageUrl,
+      splashDurationSeconds: page.businessProfile.splashDurationSeconds,
       categories: page.businessProfile.categories
         .slice()
         .sort((a, b) => a.sortOrder - b.sortOrder)

@@ -15,7 +15,7 @@ export function ImageUploadField({
   label,
 }: {
   targetUserId: string;
-  folder: "avatars" | "covers" | "logos" | "products";
+  folder: "avatars" | "covers" | "logos" | "products" | "splash";
   currentUrl?: string | null;
   onUploaded: (url: string) => unknown;
   shape?: "square" | "circle" | "wide";
