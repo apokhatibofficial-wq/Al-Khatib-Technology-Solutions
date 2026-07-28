@@ -7,6 +7,33 @@ import type {
   PublicPage,
 } from "@/generated/prisma/client";
 
+export type PublicProduct = {
+  id: string;
+  name: string;
+  description: string;
+  imageUrl: string | null;
+  price: string;
+  discountCode: string | null;
+  quantityRemaining: number | null;
+  deliveryEnabled: boolean;
+  contactMode: string;
+  contactValue: string | null;
+  categoryId: string | null;
+  dynamicFields: unknown;
+  sortOrder: number;
+};
+
+export type PublicBusinessSnapshot = {
+  companyName: string;
+  activityCategory: string | null;
+  description: string;
+  logoUrl: string | null;
+  avatarUrl: string | null;
+  coverUrl: string | null;
+  categories: { id: string; name: string; sortOrder: number }[];
+  products: PublicProduct[];
+};
+
 export type PublicPageSnapshot = {
   type: "INDIVIDUAL" | "BUSINESS";
   layoutTemplate: string;
@@ -25,30 +52,7 @@ export type PublicPageSnapshot = {
     avatarUrl: string | null;
     coverUrl: string | null;
   };
-  business?: {
-    companyName: string;
-    activityCategory: string | null;
-    description: string;
-    logoUrl: string | null;
-    avatarUrl: string | null;
-    coverUrl: string | null;
-    categories: { id: string; name: string; sortOrder: number }[];
-    products: {
-      id: string;
-      name: string;
-      description: string;
-      imageUrl: string | null;
-      price: string;
-      discountCode: string | null;
-      quantityRemaining: number | null;
-      deliveryEnabled: boolean;
-      contactMode: string;
-      contactValue: string | null;
-      categoryId: string | null;
-      dynamicFields: unknown;
-      sortOrder: number;
-    }[];
-  };
+  business?: PublicBusinessSnapshot;
 };
 
 type FullPage = PublicPage & {
@@ -62,6 +66,39 @@ type FullPage = PublicPage & {
       })
     | null;
 };
+
+export type ProductGroup = {
+  category: { id: string; name: string } | null;
+  products: PublicProduct[];
+};
+
+/** Groups a business's products by category for public display, in category
+ * sortOrder, with uncategorized products last. Categories with no active
+ * products never appear. */
+export function groupProductsByCategory(business: PublicBusinessSnapshot | undefined): ProductGroup[] {
+  if (!business) return [];
+  const categoryById = new Map(business.categories.map((c) => [c.id, c]));
+  const groups = new Map<string, ProductGroup>();
+  const order: string[] = [];
+
+  for (const product of business.products) {
+    const key = product.categoryId ?? "";
+    if (!groups.has(key)) {
+      const category = product.categoryId ? (categoryById.get(product.categoryId) ?? null) : null;
+      groups.set(key, { category: category ? { id: category.id, name: category.name } : null, products: [] });
+      order.push(key);
+    }
+    groups.get(key)!.products.push(product);
+  }
+
+  order.sort((a, b) => {
+    if (a === "") return 1;
+    if (b === "") return -1;
+    return (categoryById.get(a)?.sortOrder ?? 0) - (categoryById.get(b)?.sortOrder ?? 0);
+  });
+
+  return order.map((key) => groups.get(key)!);
+}
 
 export function buildPageSnapshot(page: FullPage): PublicPageSnapshot {
   const base: PublicPageSnapshot = {

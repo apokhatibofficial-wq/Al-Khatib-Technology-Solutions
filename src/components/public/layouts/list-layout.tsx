@@ -1,8 +1,9 @@
 import { ImageIcon } from "lucide-react";
 import { ContactButtonsRow } from "@/components/public/contact-buttons-row";
 import { CouponBanner } from "@/components/public/coupon-banner";
+import { ProductContactAction } from "@/components/public/product-contact-action";
 import { Watermark } from "@/components/public/watermark";
-import type { PublicPageSnapshot } from "@/lib/page-snapshot";
+import { groupProductsByCategory, type PublicPageSnapshot } from "@/lib/page-snapshot";
 
 export function ListLayout({
   snapshot,
@@ -42,24 +43,36 @@ export function ListLayout({
         <ContactButtonsRow buttons={snapshot.contactButtons} brandColor={snapshot.brandColor} />
 
         {isBusiness && snapshot.business!.products.length > 0 && (
-          <div className="mt-6 flex flex-col gap-2.5">
+          <div className="mt-6 flex flex-col gap-4">
             <div className="text-sm font-extrabold text-ink">
               المنتجات ({snapshot.business!.products.length.toLocaleString("ar")})
             </div>
-            {snapshot.business!.products.map((product) => (
-              <div key={product.id} className="flex items-center gap-3 rounded-xl border border-[#f0f3f5] p-2.5">
-                <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-brand-light">
-                  {product.imageUrl && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={product.imageUrl} alt="" className="h-full w-full object-cover" />
-                  )}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-bold text-ink">{product.name}</div>
-                </div>
-                <div className="shrink-0 text-sm font-bold" style={{ color: snapshot.brandColor }}>
-                  {product.price} ل.س
-                </div>
+            {groupProductsByCategory(snapshot.business).map((group) => (
+              <div key={group.category?.id ?? "uncategorized"} className="flex flex-col gap-2.5">
+                {group.category && (
+                  <div className="text-xs font-extrabold text-brand">{group.category.name}</div>
+                )}
+                {group.products.map((product) => (
+                  <div key={product.id} className="flex items-center gap-3 rounded-xl border border-[#f0f3f5] p-2.5">
+                    <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-brand-light">
+                      {product.imageUrl && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={product.imageUrl} alt="" className="h-full w-full object-cover" />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-bold text-ink">{product.name}</div>
+                      <div className="text-xs font-bold" style={{ color: snapshot.brandColor }}>
+                        {product.price} ل.س
+                      </div>
+                    </div>
+                    <ProductContactAction
+                      contactMode={product.contactMode}
+                      contactValue={product.contactValue}
+                      brandColor={snapshot.brandColor}
+                    />
+                  </div>
+                ))}
               </div>
             ))}
           </div>

@@ -1,8 +1,9 @@
 import { ImageIcon } from "lucide-react";
 import { ContactButtonsRow } from "@/components/public/contact-buttons-row";
 import { CouponBanner } from "@/components/public/coupon-banner";
+import { ProductContactAction } from "@/components/public/product-contact-action";
 import { Watermark } from "@/components/public/watermark";
-import type { PublicPageSnapshot } from "@/lib/page-snapshot";
+import { groupProductsByCategory, type PublicPageSnapshot } from "@/lib/page-snapshot";
 
 export function MinimalLayout({
   snapshot,
@@ -48,13 +49,27 @@ export function MinimalLayout({
             <div className="mb-2 text-center text-xs font-bold text-sub">
               {snapshot.business!.products.length.toLocaleString("ar")} منتج
             </div>
-            <div className="flex flex-col divide-y divide-[#f0f3f5]">
-              {snapshot.business!.products.map((product) => (
-                <div key={product.id} className="flex items-center justify-between py-2.5 text-sm">
-                  <span className="text-ink">{product.name}</span>
-                  <span className="font-bold" style={{ color: snapshot.brandColor }}>
-                    {product.price} ل.س
-                  </span>
+            <div className="flex flex-col gap-3">
+              {groupProductsByCategory(snapshot.business).map((group) => (
+                <div key={group.category?.id ?? "uncategorized"}>
+                  {group.category && (
+                    <div className="mb-1 text-xs font-extrabold text-brand">{group.category.name}</div>
+                  )}
+                  <div className="flex flex-col divide-y divide-[#f0f3f5]">
+                    {group.products.map((product) => (
+                      <div key={product.id} className="flex items-center justify-between gap-2 py-2.5 text-sm">
+                        <span className="min-w-0 flex-1 truncate text-ink">{product.name}</span>
+                        <span className="shrink-0 font-bold" style={{ color: snapshot.brandColor }}>
+                          {product.price} ل.س
+                        </span>
+                        <ProductContactAction
+                          contactMode={product.contactMode}
+                          contactValue={product.contactValue}
+                          brandColor={snapshot.brandColor}
+                        />
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>

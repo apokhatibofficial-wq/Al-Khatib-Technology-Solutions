@@ -1,8 +1,9 @@
 import { ImageIcon } from "lucide-react";
 import { ContactButtonsRow } from "@/components/public/contact-buttons-row";
 import { CouponBanner } from "@/components/public/coupon-banner";
+import { ProductContactAction } from "@/components/public/product-contact-action";
 import { Watermark } from "@/components/public/watermark";
-import type { PublicPageSnapshot } from "@/lib/page-snapshot";
+import { groupProductsByCategory, type PublicPageSnapshot } from "@/lib/page-snapshot";
 
 export function ClassicLayout({
   snapshot,
@@ -48,28 +49,40 @@ export function ClassicLayout({
         </div>
 
         {isBusiness && snapshot.business!.products.length > 0 && (
-          <div className="mt-7">
-            <div className="mb-3 text-sm font-extrabold text-ink">
+          <div className="mt-7 flex flex-col gap-5">
+            <div className="text-sm font-extrabold text-ink">
               المنتجات ({snapshot.business!.products.length.toLocaleString("ar")})
             </div>
-            <div className="grid grid-cols-2 gap-2.5">
-              {snapshot.business!.products.map((product) => (
-                <div key={product.id} className="overflow-hidden rounded-xl bg-brand-light">
-                  <div className="h-20 bg-[#dcecf9]">
-                    {product.imageUrl && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={product.imageUrl} alt="" className="h-full w-full object-cover" />
-                    )}
-                  </div>
-                  <div className="p-2.5">
-                    <div className="truncate text-xs font-bold text-ink">{product.name}</div>
-                    <div className="text-xs font-bold" style={{ color: snapshot.brandColor }}>
-                      {product.price} ل.س
+            {groupProductsByCategory(snapshot.business).map((group) => (
+              <div key={group.category?.id ?? "uncategorized"}>
+                {group.category && (
+                  <div className="mb-2.5 text-xs font-extrabold text-brand">{group.category.name}</div>
+                )}
+                <div className="grid grid-cols-2 gap-2.5">
+                  {group.products.map((product) => (
+                    <div key={product.id} className="overflow-hidden rounded-xl bg-brand-light">
+                      <div className="h-20 bg-[#dcecf9]">
+                        {product.imageUrl && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={product.imageUrl} alt="" className="h-full w-full object-cover" />
+                        )}
+                      </div>
+                      <div className="flex flex-col gap-1.5 p-2.5">
+                        <div className="truncate text-xs font-bold text-ink">{product.name}</div>
+                        <div className="text-xs font-bold" style={{ color: snapshot.brandColor }}>
+                          {product.price} ل.س
+                        </div>
+                        <ProductContactAction
+                          contactMode={product.contactMode}
+                          contactValue={product.contactValue}
+                          brandColor={snapshot.brandColor}
+                        />
+                      </div>
                     </div>
-                  </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
