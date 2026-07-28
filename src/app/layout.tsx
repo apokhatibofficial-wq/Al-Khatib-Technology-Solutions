@@ -1,14 +1,19 @@
 import type { Metadata, Viewport } from "next";
-import { Tajawal } from "next/font/google";
+import localFont from "next/font/local";
 import { Toaster } from "sonner";
 import { ServiceWorkerRegister } from "@/components/service-worker-register";
 import "./globals.css";
 
-const tajawal = Tajawal({
-  variable: "--font-tajawal",
-  subsets: ["arabic", "latin"],
-  weight: ["400", "500", "700", "800", "900"],
+const tahrir = localFont({
+  variable: "--font-tahrir",
   display: "swap",
+  src: [
+    { path: "./fonts/Tahrir-Book.ttf", weight: "400", style: "normal" },
+    { path: "./fonts/Tahrir-Medium.ttf", weight: "500", style: "normal" },
+    { path: "./fonts/Tahrir-Bold.ttf", weight: "700", style: "normal" },
+    { path: "./fonts/Tahrir-ExtraBold.ttf", weight: "800", style: "normal" },
+    { path: "./fonts/Tahrir-Black.ttf", weight: "900", style: "normal" },
+  ],
 });
 
 export const metadata: Metadata = {
@@ -41,7 +46,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ar" dir="rtl" className={`${tajawal.variable} h-full antialiased`}>
+    <html lang="ar" dir="rtl" className={`${tahrir.variable} h-full antialiased`}>
       <body className="min-h-full">
         {children}
         <Toaster position="top-center" richColors dir="rtl" />
