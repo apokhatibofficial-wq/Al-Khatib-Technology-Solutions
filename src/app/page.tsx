@@ -1,5 +1,6 @@
 "use client";
 
+import { Coffee, PrinterX, RefreshCw, Tag } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { motion, useReducedMotion, type Variants } from "motion/react";
@@ -58,16 +59,20 @@ export default function LandingPage() {
       <header className="px-5 py-24 sm:py-32">
         <div className="mx-auto grid max-w-[1240px] items-center gap-16 lg:grid-cols-[1.1fr_0.9fr] lg:gap-10">
           <motion.div variants={staggerContainer} initial="hidden" animate="visible">
-            <motion.div variants={fadeUp} className="mb-6 text-sm font-bold tracking-wide text-brand">
+            <motion.div
+              variants={fadeUp}
+              className="mb-6 inline-flex items-center gap-2 rounded-full bg-brand-light px-3.5 py-1.5 text-sm font-bold text-brand-deep"
+            >
+              <Coffee className="h-4 w-4" />
               من شركة الخطيب للحلول التقنية
             </motion.div>
             <motion.h1
               variants={fadeUp}
-              className="mb-7 text-5xl font-black leading-[1.08] tracking-tight text-ink sm:text-6xl lg:text-[64px]"
+              className="mb-7 text-5xl font-black leading-[1.15] tracking-tight text-ink sm:text-6xl lg:text-[58px]"
             >
-              حضورك الرقمي
+              قبل ما تخلص فنجان قهوتك،
               <br />
-              جاهز خلال دقائق
+              موقعك الإلكتروني جاهز
             </motion.h1>
             <motion.p variants={fadeUp} className="mb-9 max-w-lg text-lg leading-8 text-sub">
               إدلب.com يمنح الأفراد وأصحاب الأعمال صفحة أعمال رقمية كاملة — بطاقة تعريف أو متجر
@@ -283,6 +288,61 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* Why it matters: no reprinting costs */}
+      <section className="border-t border-[#eef2f5] bg-[#f7fafc] px-5 py-24 sm:py-28">
+        <div className="mx-auto max-w-[1240px]">
+          <motion.div
+            variants={fadeUp}
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.4 }}
+            className="mb-16 max-w-2xl"
+          >
+            <div className="mb-3 text-sm font-extrabold tracking-wide text-brand">لماذا صفحة رقمية</div>
+            <h2 className="text-3xl font-extrabold leading-tight sm:text-4xl">
+              لا تتكلف طباعة جديدة مع كل تغيير سعر
+            </h2>
+            <p className="mt-5 text-lg leading-8 text-sub">
+              كل ما تحتاج تعديل سعر أو منتج أو عرض، تعدّله مباشرة من لوحة التحكم — دون طباعة
+              منيو جديدة أو دفع تكلفة تصميم إضافية في كل مرة.
+            </p>
+          </motion.div>
+          <motion.div
+            variants={staggerContainer}
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.2 }}
+            className="grid gap-6 md:grid-cols-3"
+          >
+            {[
+              {
+                icon: PrinterX,
+                title: "بدون طباعة متكررة",
+                body: "أي تغيير في الأسعار أو المنتجات يظهر فورًا، بلا تكلفة طباعة جديدة في كل مرة.",
+              },
+              {
+                icon: RefreshCw,
+                title: "تحديث بلا حدود",
+                body: "عدّل أسعارك ومنتجاتك وعروضك في أي وقت تريد، بعدد مرات غير محدود.",
+              },
+              {
+                icon: Tag,
+                title: "تسعير يحدد أرباحك",
+                body: "طريقة عرض أسعارك ومنتجاتك تؤثر مباشرة في مبيعاتك — وهنا تتحكم بها بنفسك.",
+              },
+            ].map(({ icon: Icon, title, body }) => (
+              <motion.div key={title} variants={fadeUp} className="rounded-2xl border border-[#e7edf1] bg-white p-8">
+                <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-brand-light text-brand">
+                  <Icon className="h-5 w-5" />
+                </div>
+                <div className="mb-2 text-lg font-extrabold text-ink">{title}</div>
+                <div className="text-base leading-7 text-sub">{body}</div>
+              </motion.div>
+            ))}
+          </motion.div>
+        </div>
+      </section>
+
       {/* Contact */}
       <section id="contact" className="bg-brand-deep px-5 py-28 text-center">
         <motion.div
@@ -349,8 +409,15 @@ export default function LandingPage() {
             أداة نبنيها بعناية، ونطورها باستمرار، لخدمة مجتمعنا ومستقبله الرقمي.
           </p>
           <div className="mt-9 flex flex-col items-center">
-            <Image src="/signature.png" alt="توقيع" width={320} height={105} className="h-auto w-[220px] sm:w-[280px]" />
-            <span className="mt-2 text-sm font-bold text-sub">مؤسس شركة الخطيب للحلول التقنية</span>
+            <span className="text-lg font-extrabold text-ink">عبدالرحمن خطيب</span>
+            <Image
+              src="/signature.png"
+              alt="توقيع عبدالرحمن خطيب"
+              width={320}
+              height={105}
+              className="mt-1 h-auto w-[220px] sm:w-[280px]"
+            />
+            <span className="mt-1 text-sm font-bold text-sub">مؤسس شركة الخطيب للحلول التقنية</span>
           </div>
         </motion.div>
       </section>
