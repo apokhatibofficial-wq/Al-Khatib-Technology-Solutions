@@ -1,12 +1,14 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
 import { prisma } from "../../db/client.js";
 import { verifyAccessToken, type AccessTokenPayload } from "./jwt.js";
-import type { Driver } from "../../generated/prisma/client.js";
+import type { Driver, AdminUser } from "../../generated/prisma/client.js";
+import type { AdminRole } from "../../generated/prisma/enums.js";
 
 declare module "fastify" {
   interface FastifyRequest {
     actor?: AccessTokenPayload;
     driver?: Driver;
+    adminUser?: AdminUser;
   }
 }
 
@@ -46,4 +48,33 @@ export async function requireDriver(request: FastifyRequest, reply: FastifyReply
     return;
   }
   request.driver = driver;
+}
+
+/**
+ * Phase 7's admin routes. Same discipline as requireDriver: role is
+ * re-checked fresh from Postgres on every call, never trusted from the
+ * (10-minute) access token's role claim — a demoted or deactivated admin
+ * must lose access well within that window.
+ */
+export function requireAdminRole(...allowedRoles: AdminRole[]) {
+  return async function (request: FastifyRequest, reply: FastifyReply): Promise<void> {
+    await requireAuth(request, reply);
+    if (reply.sent) return;
+
+    if (request.actor?.actorType !== "admin") {
+      await reply.code(403).send({ error: "Admin access required" });
+      return;
+    }
+
+    const admin = await prisma.adminUser.findUnique({ where: { id: request.actor.actorId } });
+    if (!admin) {
+      await reply.code(403).send({ error: "Admin account not found" });
+      return;
+    }
+    if (allowedRoles.length > 0 && !allowedRoles.includes(admin.role)) {
+      await reply.code(403).send({ error: `Requires one of: ${allowedRoles.join(", ")}` });
+      return;
+    }
+    request.adminUser = admin;
+  };
 }

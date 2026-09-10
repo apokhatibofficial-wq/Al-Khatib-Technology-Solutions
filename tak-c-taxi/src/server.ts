@@ -9,6 +9,7 @@ import { registerGeoRoutes } from "./modules/geo/routes.js";
 import { registerPricingRoutes } from "./modules/pricing/routes.js";
 import { registerRideRoutes } from "./modules/rides/routes.js";
 import { registerRealtimeRoutes } from "./modules/realtime/websocket.js";
+import { registerAdminRoutes } from "./modules/admin/routes.js";
 
 export async function buildServer() {
   const app = Fastify({
@@ -42,6 +43,7 @@ export async function buildServer() {
   await registerPricingRoutes(app);
   await registerRideRoutes(app);
   await registerRealtimeRoutes(app);
+  await registerAdminRoutes(app);
 
   return app;
 }

@@ -316,10 +316,61 @@ Total fare was hand-verified against the actual seeded Idlib pricing
 config. Replaying `/end` doesn't create a second invoice (confirmed
 directly against the database, not just the HTTP response).
 
-### Not built yet (phases 7-9, in the order the doc specifies)
+## What's built (Phase 7 — admin panel & audit log)
 
-7. Admin panel & audit log
-8. Notifications (Web Push / FCM)
+- **Admin bootstrap** (`npm run admin:create <email> <role>`) — a script,
+  deliberately not an HTTP endpoint: §10 makes MFA mandatory for admin,
+  and the *first* admin account has to come from somewhere before any
+  route could itself be protected by admin auth. An open "create an
+  admin" endpoint would be a standing hole, not a bootstrap step. Prints
+  the MFA secret and a scannable `otpauth://` provisioning URI.
+- **`requireAdminRole(...roles)`** (`auth/guard.ts`) — the guard phase 2
+  deliberately didn't build yet, now that there are real admin routes to
+  attach it to. Same discipline as `requireDriver`: role is re-checked
+  fresh from Postgres on every call, never trusted from the access
+  token's claim, so a demoted or deactivated admin loses access within
+  the token's 10-minute window, not just at next login.
+- **Every mutation is audited** (`admin/audit.ts` → `AuditLog`, §10):
+  actor, role, action, entity, real before/after values, reason, IP, user
+  agent. Written explicitly in each handler — real captured state, not a
+  generic request-body dump.
+- Routes matching §4's admin list, role-gated by what actually makes
+  sense per action (full mapping in the code, not repeated here):
+  `/admin/users` (view, suspend/reactivate), `/admin/drivers` (view,
+  approve/reject/suspend — §15's "إضافة واعتماد فعليان"), `/admin/rides`,
+  `/admin/invoices`, `/admin/ratings` (read-only ops visibility),
+  `/admin/pricing` (§9: only ever inserts a new `PricingVersion`, never
+  mutates one), `/admin/announcements` (create/deactivate),
+  `/admin/notifications` (creates the record with `deliveryStatus:
+  "QUEUED"` — real delivery is phase 8, and pretending otherwise here
+  would be exactly the fabricated status the doc's "no fake data"
+  principle rules out), `/admin/audit` (`SUPER_ADMIN` only).
+- **`/admin/cities`** — not in §4's list, added because `/admin/pricing`
+  is meaningless without a city to price, and §9's "no city hardcoded in
+  code" only holds if there's a real way to add one that isn't a script.
+  `POST` takes a name, centroid, and boundary ring — same pattern as
+  `scripts/dev-seed.ts`'s Idlib bootstrap, now available as a real
+  operational path instead of a one-off script.
+
+Verified against the real local stack, including the login step this
+sandbox otherwise can't reach: `/auth/google` needs real Google
+credentials this environment doesn't have, so the test minted an MFA
+ticket the same way that endpoint would right after a real Google
+exchange, then drove the actual `/auth/admin/mfa/verify` endpoint with a
+real TOTP code computed from the bootstrap script's real secret — a
+genuine admin session, not a stubbed one. From there, entirely over real
+HTTP: a `SUPER_ADMIN` creating a city and a `FINANCE` admin pricing it;
+`FINANCE` correctly forbidden from driver approval and from the audit log
+(role-gated, not just authenticated); a real driver signup (OTP) showing
+up in the `PENDING` list and getting approved, with `approvedById` and an
+audit entry recording the real actor and the real before/after status;
+double-approving rejected; and a regular (non-admin) user forbidden from
+every `/admin/*` route.
+
+### Not built yet (phases 8-9, in the order the doc specifies)
+
+8. Notifications (Web Push / FCM — the `Notification` row and admin
+   authoring UI both already exist; the actual push delivery doesn't)
 9. Tests & security review
 
 Several of these need real external credentials/infra this repo can't
