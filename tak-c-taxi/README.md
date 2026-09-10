@@ -143,11 +143,73 @@ route, a full quote for a pickup inside Idlib with the fare math checked
 by hand against §9's formula, and the out-of-service-area rejection for a
 pickup outside it.
 
-### Not built yet (phases 4-9, in the order the doc specifies)
+## Bug fixed this phase: missing spatial indexes since phase 2
 
-4. Ride state machine & lock-based assignment
-5. Real-time & ETA (WebSocket, Redis)
-6. Waiting counter & invoices
+Every hand-added GIST index from phase 1 (`City`, `Ride`, `RideLocation`,
+`WaitingEvent`) was silently dropped by the `add_auth_sessions` migration
+in phase 2, and stayed dropped through phase 3 — Prisma's diff engine has
+no way to know about an index it can't express in `schema.prisma`, so it
+treated them as drift and emitted `DROP INDEX`. It went unnoticed because
+reviewing a migration for a new feature isn't the same as reviewing it for
+regressions in indexes the schema diff can't see. Already-pushed history
+wasn't rewritten; `20260910183013_restore_dropped_gist_indexes` re-creates
+exactly what was lost. Process fix: every future migration.sql gets
+grepped for `DROP INDEX` on a `*_gist` index before it's applied, not only
+when that migration also happens to add a geography column of its own.
+
+## What's built (Phase 4 — ride state machine & lock-based assignment)
+
+- **State machine** (`rides/state-machine.ts`) — §8's diagram as an
+  explicit allow-list; every transition is rejected server-side if it's
+  not in the table, and every transition writes a `RideStateEvent` row
+  with a timestamp and (when known) a location — §8's literal requirement,
+  which `Ride.acceptedAt/startedAt/endedAt` alone can't satisfy (they stay,
+  as cheap headline timestamps for common queries; the event table is the
+  actual audit trail).
+- **Assignment** (`rides/assignment.ts`) — §7's candidate query
+  (online + approved + `ST_DWithin`, nearest 8 first) against a new
+  `DriverLiveLocation` table: a deliberately plain-Postgres stand-in for
+  what the doc's own architecture diagram puts in Redis, since Redis itself
+  is phase 5's explicit deliverable and assignment can't be tested without
+  *some* live-location source. Offers go out one at a time, 20s timeout
+  each (real `setTimeout`, in-process — doesn't survive a restart, which is
+  an acceptable phase-4 limit, not something to fake a durable queue for).
+  §7's actual safety property — a Postgres row lock (`SELECT ... FOR
+  UPDATE`), not an app-level mutex — is what makes only one `accept()` ever
+  win.
+- **`POST /rides`** re-validates the quote server-side (not-expired,
+  not-already-consumed) before creating anything, exactly as §4 requires.
+- **Idempotency** (`rides/idempotency.ts`) — §4's "كل الطلبات الحساسة تحمل
+  Idempotency-Key" on every ride-state-changing endpoint: a replayed
+  request with the same key returns the identical cached response instead
+  of re-running the side effect.
+- Ownership checks throughout (§10 IDOR control): `GET /rides/:id` 404s
+  for anyone who isn't the rider, the assigned driver, or an admin, not a
+  403 that would confirm the ride exists.
+- `rating` wasn't assigned to any single phase in the doc's own list; it's
+  included here since `POST /rides/:id/rating` is grouped with the other
+  ride endpoints in §4 and is a natural "close out the ride" action.
+- Invoice generation is deliberately NOT built here — `POST /rides/:id/end`
+  transitions state and stamps `endedAt` only. Real fare recomputation
+  from the actually-recorded distance and waiting time is phase 6's
+  explicit deliverable, not something to approximate now.
+
+Verified against the real local DB with two/four seeded test drivers,
+covering: the full happy-path lifecycle end to end; the double-accept
+race (two drivers, only one wins — including a driver re-accepting their
+own already-won offer); an explicit decline advancing to the next
+candidate; an offer actually timing out after 20 real seconds and
+advancing on its own; `NO_DRIVER_FOUND` with zero drivers online; the
+waiting counter's `durationS` computed server-side against real elapsed
+time; idempotent replay of `/end` returning a byte-identical cached
+response; the full `RideStateEvent` audit trail in order; and the IDOR
+check rejecting an unrelated driver's `GET /rides/:id`.
+
+### Not built yet (phases 5-9, in the order the doc specifies)
+
+5. Real-time & ETA (WebSocket, Redis — including migrating
+   `DriverLiveLocation` off Postgres, per the note above)
+6. Invoices (the waiting counter itself is already built — see phase 4)
 7. Admin panel & audit log
 8. Notifications (Web Push / FCM)
 9. Tests & security review

@@ -5,6 +5,7 @@ import { prisma } from "./db/client.js";
 import { registerAuthRoutes } from "./modules/auth/routes.js";
 import { registerGeoRoutes } from "./modules/geo/routes.js";
 import { registerPricingRoutes } from "./modules/pricing/routes.js";
+import { registerRideRoutes } from "./modules/rides/routes.js";
 
 export async function buildServer() {
   const app = Fastify({
@@ -35,6 +36,7 @@ export async function buildServer() {
   await registerAuthRoutes(app);
   await registerGeoRoutes(app);
   await registerPricingRoutes(app);
+  await registerRideRoutes(app);
 
   return app;
 }
