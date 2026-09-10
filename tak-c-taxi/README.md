@@ -106,9 +106,45 @@ nullable. A brand-new phone number has no name on file at the moment OTP
 verification first succeeds — profile completion is a separate, later step
 (not yet built; `GET /me` just returns `fullName: null` until it exists).
 
-### Not built yet (phases 3-9, in the order the doc specifies)
+## What's built (Phase 3 — pricing + geo + fare quote)
 
-3. Pricing + geo + fare quote
+- **`GeoProvider`** (`src/modules/geo/provider.ts`) — the abstraction §2
+  explicitly asks for ("طبقة تجريد GeoProvider تسمح بتشغيل Google لاحقًا
+  بتغيير إعداد واحد"). `osrm.ts` and `nominatim.ts` are real clients against
+  those projects' actual documented HTTP APIs (not guessed) — note OSRM
+  takes coordinates as `lng,lat`, the opposite of this codebase's own
+  `{lat, lng}` convention, which is exactly the kind of detail worth getting
+  right rather than hand-waved. `POST /geo/geocode`, `/geo/reverse`,
+  `/geo/route` (§4) expose them directly.
+- **Pricing engine** (`pricing/engine.ts`) — a pure function implementing
+  §9's fare formula exactly, cents in, cents out. The doc names the
+  waiting-minutes step `ceil_or_prorate` without picking one; this rounds
+  up to the next full minute (how a physical taxi meter would bill it) —
+  a one-line, clearly-commented choice if the real business rule differs.
+- **`POST /rides/quote`** (`pricing/quote.ts` + `routes.ts`) — resolves
+  which `City` the pickup point actually falls inside via a real PostGIS
+  `ST_Contains` check (`geo/city.ts`), not a nearest-match guess; finds
+  that city's currently-effective `PricingVersion`; calls the real geo
+  route for actual road distance/duration; prices it; stores the quote
+  server-side with a 2-minute expiry (not specified by the doc — a
+  documented default) so `POST /rides` in phase 4 can re-validate it rather
+  than trust a client-sent price (§4's explicit rule).
+- **Dev seed** (`npm run db:seed`) — inserts the exact Idlib launch config
+  §9 specifies (not fabricated test data): `price_per_unit=$1.00`,
+  `unit_meters=1500`, `min_fare=$1.00`, `waiting_fee_per_min=$0.05`. The
+  city boundary is a rough bounding box, clearly commented as a
+  placeholder for the real administrative polygon a live deployment needs.
+
+Verified against the real DB with a stand-in OSRM/Nominatim (this
+project's actual client code, hitting a stub server shaped like their real
+response contracts — no self-hosted routing/geocoding instance with real
+Idlib map data exists in this dev sandbox): geocode, reverse geocode,
+route, a full quote for a pickup inside Idlib with the fare math checked
+by hand against §9's formula, and the out-of-service-area rejection for a
+pickup outside it.
+
+### Not built yet (phases 4-9, in the order the doc specifies)
+
 4. Ride state machine & lock-based assignment
 5. Real-time & ETA (WebSocket, Redis)
 6. Waiting counter & invoices

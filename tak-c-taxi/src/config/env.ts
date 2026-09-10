@@ -20,6 +20,13 @@ const envSchema = z.object({
   // Google OAuth (§5, secondary auth path). Optional until that flow is exercised.
   GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
   GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
+
+  // Geo (phase 3, §2). Self-hosted OSRM (routing) + Nominatim (geocoding) —
+  // not Google Maps, per §2's explicit export/sanctions-risk reasoning.
+  // Optional in development (routes return 503 until configured); required
+  // in production.
+  ROUTING_ENGINE_URL: z.string().optional(),
+  GEOCODER_URL: z.string().optional(),
 });
 
 export const env = envSchema.parse(process.env);
@@ -27,5 +34,10 @@ export const env = envSchema.parse(process.env);
 if (env.NODE_ENV === "production" && !env.OTP_PROVIDER_KEY) {
   throw new Error(
     "OTP_PROVIDER_KEY is required in production — refusing to start with OTP delivery silently disabled.",
+  );
+}
+if (env.NODE_ENV === "production" && (!env.ROUTING_ENGINE_URL || !env.GEOCODER_URL)) {
+  throw new Error(
+    "ROUTING_ENGINE_URL and GEOCODER_URL are required in production — fares must come from a real route, never an estimate.",
   );
 }

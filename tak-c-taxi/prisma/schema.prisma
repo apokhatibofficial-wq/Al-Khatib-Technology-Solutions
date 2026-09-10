@@ -105,6 +105,7 @@ model City {
 
   users           User[]
   pricingVersions PricingVersion[]
+  quotes          Quote[]
 
   @@index([isActive])
 }
@@ -129,8 +130,38 @@ model PricingVersion {
 
   rides    Ride[]
   invoices Invoice[]
+  quotes   Quote[]
 
   @@index([cityId, effectiveFrom])
+}
+
+/// Not in the doc's §3 table list, but required by §4's own API contract:
+/// "العميل يستلم quote_id ولا يرسل سعرًا أبدًا" — the client only ever holds
+/// a quote_id; the priced numbers live here, server-side, until POST /rides
+/// consumes one (and re-validates it — see the pricing module's quote.ts).
+model Quote {
+  id               String         @id @default(cuid())
+  cityId           String
+  city             City           @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  /// geography(Point, 4326).
+  pickup           Unsupported("geography(Point, 4326)")
+  dest             Unsupported("geography(Point, 4326)")
+  pickupLabel      String
+  destLabel        String
+  distanceM        Int
+  durationS        Int
+  routePolyline    String
+  fareCents        Int
+  currency         String
+  pricingVersionId String
+  pricingVersion   PricingVersion @relation(fields: [pricingVersionId], references: [id], onDelete: Restrict)
+  expiresAt        DateTime
+  /// Set once a Ride is created from this quote — a quote is consumed at
+  /// most once (§4's re-validation rule would be pointless otherwise).
+  consumedAt       DateTime?
+  createdAt        DateTime       @default(now())
+
+  @@index([expiresAt])
 }
 
 // ---------------------------------------------------------------------------

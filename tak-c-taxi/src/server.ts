@@ -3,6 +3,8 @@ import cookie from "@fastify/cookie";
 import { env } from "./config/env.js";
 import { prisma } from "./db/client.js";
 import { registerAuthRoutes } from "./modules/auth/routes.js";
+import { registerGeoRoutes } from "./modules/geo/routes.js";
+import { registerPricingRoutes } from "./modules/pricing/routes.js";
 
 export async function buildServer() {
   const app = Fastify({
@@ -31,6 +33,8 @@ export async function buildServer() {
   });
 
   await registerAuthRoutes(app);
+  await registerGeoRoutes(app);
+  await registerPricingRoutes(app);
 
   return app;
 }

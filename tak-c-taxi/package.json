@@ -10,10 +10,12 @@
     "postinstall": "CHECKPOINT_DISABLE=1 prisma generate",
     "db:migrate": "CHECKPOINT_DISABLE=1 prisma migrate dev",
     "db:deploy": "CHECKPOINT_DISABLE=1 prisma migrate deploy",
-    "db:studio": "CHECKPOINT_DISABLE=1 prisma studio"
+    "db:studio": "CHECKPOINT_DISABLE=1 prisma studio",
+    "db:seed": "tsx scripts/dev-seed.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",
+    "@paralleldrive/cuid2": "^3.3.0",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
     "dotenv": "^17.4.2",
