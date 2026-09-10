@@ -139,7 +139,9 @@ model PricingVersion {
 
 model User {
   id        String     @id @default(cuid())
-  fullName  String
+  /// Null until the post-OTP-verify profile-completion step (not yet built)
+  /// runs — a brand-new phone number has no name on file at verify time.
+  fullName  String?
   /// E.164 format (e.g. +9639XXXXXXXX). The OTP auth path (§5) keys off this.
   phone     String     @unique
   gender    String?
@@ -156,6 +158,7 @@ model User {
   ridesAsRider      Ride[]           @relation("RideRider")
   ratingsGiven      Rating[]
   pushSubscriptions PushSubscription[]
+  sessions          Session[]
 
   @@index([status])
   @@index([cityId])
@@ -216,6 +219,48 @@ model DriverDocument {
   createdAt    DateTime   @default(now())
 
   @@index([driverId])
+}
+
+// ---------------------------------------------------------------------------
+// Auth & sessions (§5). Access tokens are short-lived JWTs, never persisted.
+// Refresh tokens are JWTs too (jti = this row's id) so JWT_REFRESH_SECRET
+// alone can't mint a valid one — but each jti is tracked here so a rotation
+// chain (familyId) can be revoked wholesale the moment a *retired* jti is
+// presented again (reuse detection, §5/§10).
+// ---------------------------------------------------------------------------
+
+model Session {
+  id          String     @id @default(cuid())
+  familyId    String
+  userId      String?
+  user        User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  adminUserId String?
+  adminUser   AdminUser? @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+  userAgent   String?
+  ipAddress   String?
+  createdAt   DateTime   @default(now())
+  expiresAt   DateTime
+  revokedAt   DateTime?
+
+  @@index([familyId])
+  @@index([userId])
+  @@index([adminUserId])
+  @@index([expiresAt])
+}
+
+/// One row per OTP send (§5 OTP path, §10 "OTP بحد محاولات"). codeHash is an
+/// HMAC, not a reversible encoding — the raw code only ever exists in the
+/// SMS itself and briefly in memory on this server while sending it.
+model OtpRequest {
+  id         String    @id @default(cuid())
+  phone      String
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([phone, createdAt])
 }
 
 // ---------------------------------------------------------------------------
@@ -372,6 +417,7 @@ model AdminUser {
   verifiedDocuments  DriverDocument[]
   pricingVersions    PricingVersion[]
   announcements      Announcement[]
+  sessions           Session[]
 
   @@index([role])
 }

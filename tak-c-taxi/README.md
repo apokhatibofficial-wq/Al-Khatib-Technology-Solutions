@@ -51,13 +51,63 @@ plus the minimum server scaffold needed to run and verify them.
   including the DB-down failure path (`503`) and graceful shutdown on
   `SIGTERM`.
 
-No business logic beyond that exists yet — no auth, no routes under
-`/rides`, `/driver`, `/admin`, etc. Adding stub modules for those now, ahead
-of actually building them, was deliberately avoided.
+No route-level business logic beyond that existed yet as of phase 1 — no
+`/rides`, `/driver`, `/admin`, etc. Adding stub modules for those ahead of
+actually building them was deliberately avoided, and still is.
 
-### Not built yet (phases 2-9, in the order the doc specifies)
+## What's built (Phase 2 — auth & sessions)
 
-2. Auth & authorization (OTP + Google OAuth, sessions, RBAC)
+`src/modules/auth/` — endpoints exactly matching §4's auth list (`POST
+/auth/otp/request`, `/auth/otp/verify`, `/auth/google`, `/auth/refresh`,
+`/auth/logout`, `GET /me`), plus one the doc's role model requires but
+doesn't separately list: `POST /auth/admin/mfa/verify`.
+
+- **OTP** (`otp.ts`) — primary auth path (§5). Codes are HMAC-hashed at
+  rest (never stored in plaintext), rate-limited per phone (60s cooldown,
+  5/hour), capped at 5 verify attempts. No SMS vendor is named in the doc
+  (just a generic `OTP_PROVIDER_KEY`), so sending is behind a small
+  interface: in development it logs the code instead of sending it; in
+  production (`env.ts`) the server now refuses to boot at all without
+  `OTP_PROVIDER_KEY` set, and even with it set, `sendOtpCode()` throws
+  loudly rather than silently no-op'ing — wiring the actual vendor call is
+  a fast-follow, not something to fake.
+- **Google OAuth** (`google.ts`) — server-side authorization-code exchange
+  (§5: "بتبديل الرمز على السيرفر لا في المتصفح"), real `id_token`
+  verification against Google's live JWKS via `jose`. Deliberate scope
+  decision: since `users` has no email column (phone is the identity
+  anchor, unique + not null) and Google supplies no phone number, Google
+  sign-in can only ever *log in* an account that already exists by
+  `googleSub` — it can't originate a new phone-less account. A `no_account`
+  response tells the client to verify by phone first; a "link my Google
+  account" endpoint is a natural follow-up, not built here.
+- **Admin MFA** (`totp.ts` + the `/auth/admin/mfa/verify` route) — §10 marks
+  MFA mandatory for admin. Google resolves *identity* (by matching
+  `AdminUser.email`); a short-lived signed ticket (5 min, structurally
+  distinct from a real access token) bridges to a required TOTP step before
+  any admin session is actually issued.
+- **Sessions** (`sessions.ts`, `jwt.ts`) — access tokens are 10-minute JWTs
+  (§5), never persisted. Refresh tokens are JWTs too (so
+  `JWT_REFRESH_SECRET` alone can't forge one) delivered as
+  `HttpOnly; Secure; SameSite=Strict` cookies, with each one's `jti`
+  tracked in `Session` for rotation + reuse detection: presenting an
+  already-rotated/revoked token doesn't just fail, it revokes every session
+  in that rotation chain (`familyId`). Verified against the real DB, not
+  just typechecked: rotation, replay-of-a-rotated-token, and
+  replay-after-logout all correctly return `reuse_detected` and kill the
+  whole chain — see the commit history for the exact curl flow this was
+  tested with.
+- **`requireAuth`** (`guard.ts`) is the one guard phase 2 actually needs
+  (backs `GET /me`). Role-scoped guards (`requireAdminRole`, a driver
+  guard) belong to whichever phase adds their first real protected route —
+  phase 4's ride endpoints, phase 7's admin panel.
+
+A real, non-obvious fix this phase forced: `User.fullName` had to become
+nullable. A brand-new phone number has no name on file at the moment OTP
+verification first succeeds — profile completion is a separate, later step
+(not yet built; `GET /me` just returns `fullName: null` until it exists).
+
+### Not built yet (phases 3-9, in the order the doc specifies)
+
 3. Pricing + geo + fare quote
 4. Ride state machine & lock-based assignment
 5. Real-time & ETA (WebSocket, Redis)

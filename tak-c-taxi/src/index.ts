@@ -2,7 +2,7 @@ import { buildServer } from "./server.js";
 import { env } from "./config/env.js";
 import { prisma } from "./db/client.js";
 
-const app = buildServer();
+const app = await buildServer();
 
 async function shutdown(signal: string) {
   app.log.info({ signal }, "shutting down");

@@ -1,8 +1,10 @@
 import Fastify from "fastify";
+import cookie from "@fastify/cookie";
 import { env } from "./config/env.js";
 import { prisma } from "./db/client.js";
+import { registerAuthRoutes } from "./modules/auth/routes.js";
 
-export function buildServer() {
+export async function buildServer() {
   const app = Fastify({
     logger:
       env.NODE_ENV === "development"
@@ -15,6 +17,8 @@ export function buildServer() {
         : true,
   });
 
+  await app.register(cookie);
+
   // Real liveness + DB-connectivity check — no mocked/hardcoded "ok".
   app.get("/health", async (_request, reply) => {
     try {
@@ -25,6 +29,8 @@ export function buildServer() {
       return reply.code(503).send({ status: "error", db: "down" });
     }
   });
+
+  await registerAuthRoutes(app);
 
   return app;
 }
