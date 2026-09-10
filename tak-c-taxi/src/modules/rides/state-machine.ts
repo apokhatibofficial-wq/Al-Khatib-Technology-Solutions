@@ -42,6 +42,11 @@ const TRANSITIONS: Record<RideState, RideState[]> = {
  */
 export const ACTIVE_RIDE_STATES = ["DRIVER_ACCEPTED", "DRIVER_ARRIVING", "DRIVER_ARRIVED", "TRIP_STARTED", "WAITING"] as const;
 
+/** Pure allow-list check, split out of transitionRide so it's unit-testable without a DB. */
+export function isValidTransition(from: RideState, to: RideState): boolean {
+  return TRANSITIONS[from].includes(to);
+}
+
 export class InvalidTransitionError extends Error {}
 
 /**
@@ -61,8 +66,7 @@ export async function transitionRide(
     const current = rows[0];
     if (!current) throw new Error(`Ride ${rideId} not found`);
 
-    const allowed = TRANSITIONS[current.state];
-    if (!allowed.includes(toState)) {
+    if (!isValidTransition(current.state, toState)) {
       throw new InvalidTransitionError(`Cannot transition ride from ${current.state} to ${toState}`);
     }
 

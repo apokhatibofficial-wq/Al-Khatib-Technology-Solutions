@@ -26,10 +26,15 @@ export async function clearDriverLocation(driverId: string): Promise<void> {
   await redis.multi().zrem(GEO_KEY, driverId).del(hashKey(driverId)).exec();
 }
 
-export async function getDriverLocation(driverId: string): Promise<GeoPoint | null> {
-  const hash = await redis.hmget(hashKey(driverId), "lat", "lng");
-  if (!hash[0] || !hash[1]) return null;
-  return { lat: Number(hash[0]), lng: Number(hash[1]) };
+export interface DriverLocationRecord extends GeoPoint {
+  accuracyM: number;
+  updatedAt: Date;
+}
+
+export async function getDriverLocation(driverId: string): Promise<DriverLocationRecord | null> {
+  const hash = await redis.hmget(hashKey(driverId), "lat", "lng", "accuracyM", "updatedAt");
+  if (!hash[0] || !hash[1] || !hash[3]) return null;
+  return { lat: Number(hash[0]), lng: Number(hash[1]), accuracyM: Number(hash[2]), updatedAt: new Date(Number(hash[3])) };
 }
 
 /**

@@ -6,9 +6,17 @@ import { findCityForPoint } from "../geo/city.js";
 import { ACTIVE_RIDE_STATES } from "../rides/state-machine.js";
 import type { GeoPoint } from "../geo/provider.js";
 
+// column is already constrained to a 2-value literal union at compile
+// time (every call site passes a hardcoded literal, never request input),
+// so this was never reachable as an injection vector — but $queryRawUnsafe
+// interpolates its first argument verbatim, so a fixed lookup rather than
+// direct string interpolation is worth the two extra lines: it stays safe
+// even if this signature is ever loosened to a plain `string`.
+const RIDE_POINT_COLUMNS = { pickup: '"pickup"', dest: '"dest"' } as const;
+
 async function ridePoint(rideId: string, column: "pickup" | "dest"): Promise<GeoPoint | null> {
   const rows = await prisma.$queryRawUnsafe<{ lat: number; lng: number }[]>(
-    `SELECT ST_Y("${column}"::geometry) as lat, ST_X("${column}"::geometry) as lng FROM "Ride" WHERE id = $1`,
+    `SELECT ST_Y(${RIDE_POINT_COLUMNS[column]}::geometry) as lat, ST_X(${RIDE_POINT_COLUMNS[column]}::geometry) as lng FROM "Ride" WHERE id = $1`,
     rideId,
   );
   return rows[0] ?? null;

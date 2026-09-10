@@ -8,6 +8,7 @@ import { startSearching, acceptOffer, declineOffer, OfferNotAcceptableError } fr
 import { withIdempotency } from "./idempotency.js";
 import { setDriverLocation, clearDriverLocation } from "../realtime/geo.js";
 import { broadcastDriverLocation } from "../realtime/broadcast.js";
+import { checkLocationPlausibility } from "../realtime/plausibility.js";
 import { issueInvoice } from "../pricing/invoice.js";
 
 const pointSchema = z.object({ lat: z.coerce.number().min(-90).max(90), lng: z.coerce.number().min(-180).max(180) });
@@ -177,28 +178,43 @@ export async function registerRideRoutes(app: FastifyInstance): Promise<void> {
     const body = z.object({ points: z.array(locationPointSchema).min(1) }).safeParse(request.body);
     if (!body.success) return reply.code(400).send({ error: body.error.issues[0]?.message });
 
-    // Only the latest point matters for the live (Redis) position...
-    const latest = body.data.points[body.data.points.length - 1]!;
-    await setDriverLocation(request.driver!.id, latest, latest.accuracyM);
-    await broadcastDriverLocation(request.driver!.id, latest, latest.accuracyM);
-
-    // ...but §4's "batched" send exists for exactly this: catching up
-    // RideLocation's historical trail after a connectivity gap, not just
-    // reporting where the driver is right now. Only persisted while
-    // there's an active ride to attach the breadcrumbs to.
     const activeRide = await prisma.ride.findFirst({
       where: { driverId: request.driver!.id, state: { in: [...ACTIVE_RIDE_STATES] } },
       orderBy: { requestedAt: "desc" },
       select: { id: true },
     });
-    if (activeRide) {
-      for (const p of body.data.points) {
+
+    // §10 threat table ("تزييف الموقع"): reject impossible speeds/jumps,
+    // log anomalies for human review — never silently trust raw client
+    // GPS. Points are walked in order (not just latest-vs-Redis) so a
+    // batch catching up after a gap is checked leg by leg, not as one
+    // big implied jump from whatever Redis had before the whole batch.
+    let lastAccepted: (typeof body.data.points)[number] | undefined;
+    for (const p of body.data.points) {
+      const check = await checkLocationPlausibility(request.driver!.id, p, p.accuracyM, p.deviceTs);
+      if (!check.plausible) {
+        request.log.warn({ driverId: request.driver!.id, point: p, reason: check.reason }, "rejected implausible driver location");
+        continue;
+      }
+
+      await setDriverLocation(request.driver!.id, p, p.accuracyM);
+      lastAccepted = p;
+
+      // §4's "batched" send exists for exactly this: catching up
+      // RideLocation's historical trail after a connectivity gap, not
+      // just reporting where the driver is right now. Only persisted
+      // while there's an active ride to attach the breadcrumbs to.
+      if (activeRide) {
         await prisma.$executeRaw`
           INSERT INTO "RideLocation" ("rideId", "driverId", point, "accuracyM", "speedMps", heading, "deviceTs", "serverTs")
           VALUES (${activeRide.id}, ${request.driver!.id},
                   ST_SetSRID(ST_MakePoint(${p.lng}, ${p.lat}), 4326), ${p.accuracyM}, ${p.speedMps ?? null}, ${p.heading ?? null}, ${p.deviceTs}, now())
         `;
       }
+    }
+
+    if (lastAccepted) {
+      await broadcastDriverLocation(request.driver!.id, lastAccepted, lastAccepted.accuracyM);
     }
 
     return reply.code(204).send();

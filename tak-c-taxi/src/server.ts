@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import cookie from "@fastify/cookie";
 import websocket from "@fastify/websocket";
+import rateLimit from "@fastify/rate-limit";
 import { env } from "./config/env.js";
 import { prisma } from "./db/client.js";
 import { redis } from "./modules/realtime/redis.js";
@@ -27,6 +28,20 @@ export async function buildServer() {
 
   await app.register(cookie);
   await app.register(websocket);
+
+  // §10's "إساءة استخدام API" threat row: "حدود معدل لكل مستخدم وIP" — a
+  // per-IP floor across the whole API (backed by Redis, already a hard
+  // dependency, so limits hold across more than one server instance).
+  // Not specified numerically by the doc — a documented default, generous
+  // enough for a driver polling location every 2-8s (§6) without ever
+  // being the bottleneck. /auth/otp/* has its own, tighter, phone-keyed
+  // limit (otp.ts) — this is the general floor everything else sits on.
+  await app.register(rateLimit, {
+    global: true,
+    max: 300,
+    timeWindow: "1 minute",
+    redis,
+  });
 
   // Real liveness + dependency-connectivity check — no mocked/hardcoded "ok".
   app.get("/health", async (_request, reply) => {

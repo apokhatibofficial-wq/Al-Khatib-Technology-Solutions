@@ -418,14 +418,159 @@ live sibling subscription still receives the same notification, and that
 unsubscribing removes it for good — leaving a subsequent notification to
 honestly report `NO_SUBSCRIPTIONS` again rather than a stale `SENT`.
 
-### Not built yet (phase 9)
+## What's built (Phase 9 — tests & security review)
 
-9. Tests & security review
+### Security hardening found and fixed before writing tests
 
-Several of these need real external credentials/infra this repo can't
-supply on its own (an OTP provider, Google OAuth credentials, a self-hosted
-tile/routing service, VAPID/FCM keys, S3-compatible storage) — see
-`.env.example`.
+Two real gaps in §10's threat table were still open going into this phase
+— found by re-reading that table against what phases 1-8 had actually
+built, not by a test failure:
+
+- **GPS plausibility checking** (`realtime/plausibility.ts`, new) — §10's
+  "تزييف الموقع" (location spoofing) row explicitly names "reject
+  impossible speeds/jumps" and "flag anomalies for human review" as
+  controls; nothing enforced either before this. `POST /driver/location`
+  now runs every incoming point through `checkLocationPlausibility`
+  (rejects on device-clock skew > 300s, accuracy worse than 200m, or an
+  implied speed over consecutive fixes above ~198 km/h) before it's ever
+  broadcast or persisted — an implausible point is logged and skipped, not
+  silently trusted. This is detection-and-reduction, not a claim of 100%
+  spoofing prevention on a user-owned device — the doc itself treats that
+  as an impossible promise, not a missing feature.
+- **General API rate limiting** (`@fastify/rate-limit`, registered in
+  `server.ts`) — §10's "إساءة استخدام API" row asks for per-user/IP rate
+  limits; only `/auth/otp/*` had one (phone-keyed, in `otp.ts`). A
+  Redis-backed floor (300 req/min/IP, generous enough for a driver polling
+  location every 2-8s per §6) now sits under the whole API, so it holds
+  across more than one server instance.
+
+### Automated test suite (`test/`, Node's built-in `node:test` runner — no
+new test-framework dependency)
+
+Covers §14's list item by item:
+
+| §14 ask | Where |
+| --- | --- |
+| Pricing engine unit tests | `test/pricing/engine.test.ts` |
+| State machine unit tests | `test/rides/state-machine.test.ts` |
+| Auth/IDOR integration tests | `test/integration/auth-idor.test.ts` |
+| Concurrency: two drivers race one ride | `test/integration/concurrency.test.ts` |
+| Real-time disconnect/reconnect | `test/integration/realtime-ws.test.ts` |
+| Invoice vs. known distance | `test/integration/invoice-distance.test.ts` |
+
+None of this is mocked assertions against a fake DB — every integration
+test runs against a real, disposable Postgres+PostGIS database
+(`tak_c_taxi_test`, migrated with the real `prisma migrate deploy`
+history) and a real Redis instance, through the real Fastify app
+(`app.inject()` for HTTP, a real `ws` client against a real ephemeral-port
+listener for WebSocket) or by calling the real service-layer functions
+directly (`acceptOffer`, `issueInvoice`, `requestOtp`/`verifyOtp`). Nothing
+here asserts "the mock returned what the mock was told to return."
+
+Specifics worth calling out:
+
+- **The concurrency test** (`assignment.ts`'s `acceptOffer`, §7's single
+  most safety-critical property) fires two real, concurrent transactions
+  at Postgres — not a scripted "call A then B" — and checks that the real
+  `SELECT ... FOR UPDATE` row lock lets exactly one win, repeated across 8
+  fresh rides so a race that only sometimes loses can't pass on luck.
+  Also checks a third, later `acceptOffer` call against an already-decided
+  ride is rejected the same way.
+- **The invoice test** builds a known GPS trail, computes its distance
+  with an independent haversine implementation (written directly in the
+  test, never imported from product code), and checks it against
+  `issueInvoice`'s real PostGIS `ST_Length` calculation — within a 2%
+  tolerance (PostGIS's geodesic calculation and a spherical haversine sum
+  aren't bit-identical, but agree closely at these distances). Also checks
+  the waiting-time aggregation, the planned-distance fallback when no
+  trail was recorded, and that a ride can't be invoiced twice.
+- **The WebSocket test** opens a real socket, subscribes to a ride room,
+  receives a real Redis-Pub/Sub-relayed broadcast from
+  `broadcastDriverLocation`, disconnects, then opens a **second** fresh
+  connection and confirms it can resubscribe and keep receiving live
+  updates — the local-subscriber bookkeeping in `websocket.ts` doesn't
+  leak or wedge across a disconnect/reconnect cycle. Also checks
+  unauthenticated/invalid-token connections are closed with `4001`, and
+  that the same IDOR discipline as `GET /rides/:id` applies to room
+  subscriptions (`rooms.ts`'s `canSubscribe`).
+- **The auth/IDOR suite** exercises the real OTP request→verify flow
+  (including replay and rate-limit rejection), then mints real JWT
+  sessions via `createSession` to check `GET /rides/:id` the way §10
+  demands: the ride's own rider and assigned driver can see it, an
+  unrelated rider or driver gets a `404` (not `403` — no existence leak),
+  and an admin can see any ride. Also checks `requireAdminRole` re-reads
+  the DB on every request rather than trusting the access token's role
+  claim — a `SUPER_ADMIN` demoted to `READONLY` mid-session loses access
+  on its very next request, not at next login.
+
+Run it with `npm test` (see `.env.test.example` for the one-time test
+database setup — it must be a separate, disposable database, since the
+suite truncates every application table between test files).
+
+### Two real bugs found *while writing the tests themselves*
+
+Both are fixed; neither was a product-code defect — both were in the test
+infrastructure this phase added, and are recorded here in the same spirit
+as every other phase's "here's what broke and how it was actually fixed,"
+not swept past:
+
+- **`resetDb()`'s first version truncated PostGIS's own `spatial_ref_sys`
+  table.** It queried `pg_tables` for every table in `public` except
+  `_prisma_migrations` — which also matches `spatial_ref_sys`, a real base
+  table the `postgis` extension owns, not just metadata. Every test file's
+  setup was silently emptying it, so `ST_Length`/geography casts started
+  failing with `Cannot find SRID (4326) in spatial_ref_sys` — intermittently,
+  since the row count depended on which test file had run most recently.
+  Fixed by excluding any table registered to an extension (`pg_depend`
+  with `deptype = 'e'`) rather than naming `spatial_ref_sys` as a
+  one-off special case, so this stays correct if PostGIS ever adds
+  another base table.
+- **A freshly-created test database's `spatial_ref_sys` starts empty.**
+  `CREATE EXTENSION postgis` does not, by itself, load the standard EPSG
+  SRID definitions — that's a separate seed script
+  (`.../contrib/postgis-3.4/spatial_ref_sys.sql`) the dev database
+  happened to have been seeded with already, but a fresh test database
+  does not get for free. Documented as an explicit one-time setup step in
+  `.env.test.example`, since anyone provisioning a new database (test,
+  staging, or a real production one) will hit the same thing otherwise.
+
+### Security review
+
+- **SQL injection**: every raw-SQL call site in `src/` was re-audited this
+  phase. All use Prisma's tagged-template `$queryRaw`/`$executeRaw` (safe,
+  parameterized) except the two `$queryRawUnsafe`/`$executeRawUnsafe`
+  call sites (`realtime/broadcast.ts`'s `ridePoint`, `scripts/dev-seed.ts`),
+  both of which interpolate only a fixed, compile-time-constant
+  string looked up from a small object literal — never request input —
+  with every actual value passed as a bound parameter. No injectable
+  call site found; one purely defensive hardening (the
+  `RIDE_POINT_COLUMNS` lookup in `broadcast.ts`, done in phase 8/9) was
+  applied on top of an already-safe call, not a fix for a real
+  vulnerability.
+- **IDOR**: covered by the automated suite above (HTTP and WebSocket both)
+  — every ride/driver/city resource re-checks real ownership from the DB
+  on every request, never from a client-supplied ID alone.
+- **Auth**: access tokens are short-lived (10 min) and role/status is
+  re-checked from Postgres on every protected request, never trusted from
+  the token's own claims — covered by the demoted-admin test above.
+  Refresh tokens rotate with reuse detection (`sessions.ts`); a replayed,
+  already-rotated refresh token kills the entire session family, not just
+  itself.
+- **Location spoofing / API abuse**: closed this phase — see "Security
+  hardening" above.
+- **Explicitly out of scope, not overlooked**:
+  - Malicious file-upload scanning — no upload endpoint exists yet in this
+    backend (driver documents/vehicle photos are S3-key references in the
+    schema; the actual upload flow isn't built).
+  - Admin IP allowlisting — §10 itself marks this "اختياري" (optional).
+- **Not applicable to this phase**: §14 also asks for a Lighthouse
+  run against a slow network and a UX review. Both are frontend-PWA
+  concerns; per §15 the frontend already exists as separate prototypes
+  this repo doesn't contain, and this project is the backend only (see
+  "Why this doesn't reuse the root app's stack" above). Nothing to run
+  Lighthouse against here.
+
+All 9 phases from the architecture document are now built.
 
 ## Getting started (local development)
 
@@ -433,7 +578,14 @@ tile/routing service, VAPID/FCM keys, S3-compatible storage) — see
 
 - Node.js 20+
 - PostgreSQL with the PostGIS extension available (`CREATE EXTENSION postgis`
-  requires it to be installed on the server, not just enabled per-database)
+  requires it to be installed on the server, not just enabled per-database).
+  **`CREATE EXTENSION postgis` alone is not enough** — it creates an empty
+  `spatial_ref_sys` table; the standard EPSG SRID definitions (including
+  4326, which every geography column in this schema uses) are a separate
+  seed script that has to be loaded once per database:
+  `psql -d <your_db> -f "$(pg_config --sharedir)/contrib/postgis-3.4/spatial_ref_sys.sql"`
+  (found the hard way in phase 9 — see that section's "bugs found while
+  writing the tests").
 - Redis (phase 5+ — driver matching and realtime both hard-depend on it,
   no degraded mode)
 
@@ -479,7 +631,19 @@ npm run dev
 ```
 
 `GET http://localhost:3000/health` should return
-`{"status":"ok","db":"up","time":"..."}`.
+`{"status":"ok","db":"up","redis":"up","time":"..."}`.
+
+### 6. Run the tests
+
+```bash
+cp .env.test.example .env.test   # then edit DATABASE_URL — see that file's setup steps
+npm test
+```
+
+Needs its own, disposable Postgres database (the suite truncates every
+application table between test files — never point this at your dev DB).
+Uses Node's built-in `node:test` runner via `tsx`, so there's nothing extra
+to install.
 
 ## Scripts
 
@@ -491,6 +655,8 @@ npm run dev
 | `npm run db:migrate` | Create/apply migrations in development |
 | `npm run db:deploy` | Apply existing migrations (production/CI) |
 | `npm run db:studio` | Open Prisma Studio |
+| `npm test` | Run the automated test suite against `.env.test` |
+| `npm run typecheck:test` | Typecheck `src/` and `test/` together |
 
 ## Known dependency note
 
