@@ -1,0 +1,30 @@
+import Fastify from "fastify";
+import { env } from "./config/env.js";
+import { prisma } from "./db/client.js";
+
+export function buildServer() {
+  const app = Fastify({
+    logger:
+      env.NODE_ENV === "development"
+        ? {
+            transport: {
+              target: "pino-pretty",
+              options: { translateTime: "HH:MM:ss", ignore: "pid,hostname" },
+            },
+          }
+        : true,
+  });
+
+  // Real liveness + DB-connectivity check — no mocked/hardcoded "ok".
+  app.get("/health", async (_request, reply) => {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      return reply.send({ status: "ok", db: "up", time: new Date().toISOString() });
+    } catch (err) {
+      app.log.error(err, "health check: database unreachable");
+      return reply.code(503).send({ status: "error", db: "down" });
+    }
+  });
+
+  return app;
+}

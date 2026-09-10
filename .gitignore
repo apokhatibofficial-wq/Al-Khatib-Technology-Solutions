@@ -65,3 +65,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# tak-c-taxi (separate project — see tak-c-taxi/README.md)
+tak-c-taxi/node_modules
+tak-c-taxi/dist
+tak-c-taxi/src/generated
