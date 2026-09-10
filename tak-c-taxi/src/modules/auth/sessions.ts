@@ -8,6 +8,7 @@ import {
   type AccessTokenPayload,
 } from "./jwt.js";
 import type { AdminRole } from "../../generated/prisma/enums.js";
+import { deliverNotification } from "../notifications/deliver.js";
 
 export interface SessionMeta {
   userAgent?: string;
@@ -62,7 +63,32 @@ export async function createSession(
   role: AdminRole | undefined,
   meta: SessionMeta,
 ): Promise<TokenPair> {
-  return issuePair(actorType, actorId, role, randomUUID(), meta);
+  const tokens = await issuePair(actorType, actorId, role, randomUUID(), meta);
+
+  // §10's threat table lists this as an applied control against account
+  // takeover: "إشعار جلسة جديدة". Only on a genuinely new login (this
+  // function), never on rotateSession's continuation of an existing one.
+  // Admins have no push channel (§3) — nothing to notify there.
+  if (actorType === "user") {
+    void (async () => {
+      try {
+        const notification = await prisma.notification.create({
+          data: {
+            recipientType: "PASSENGER",
+            recipientId: actorId,
+            title: "New sign-in",
+            body: meta.userAgent ? `New session started (${meta.userAgent}).` : "New session started.",
+            deliveryStatus: "QUEUED",
+          },
+        });
+        await deliverNotification(notification.id);
+      } catch {
+        // Best-effort: a failure here must never break login itself.
+      }
+    })();
+  }
+
+  return tokens;
 }
 
 /**

@@ -34,6 +34,19 @@ const envSchema = z.object({
   // (assignment.ts) hard-depends on this from phase 5 onward, so it's
   // required in every environment, not just production.
   REDIS_URL: z.string().min(1, "REDIS_URL is not set — driver matching and realtime both depend on it."),
+
+  // Notifications (phase 8, §2/§11). Standard Web Push, VAPID-authenticated
+  // — this is a PWA with no native app (§11: no Play/App Store), so Chrome's
+  // push service is reached the same way every other browser's is, over the
+  // standard Push API; there's no separate Firebase Admin SDK integration
+  // to build. VAPID_SUBJECT isn't in the doc's §13 list, but the Web Push
+  // protocol itself requires one (a contact URI) — see notifications/push.ts.
+  // FCM_SERVER_KEY stays in .env.example (§13 names it) but unused: it's
+  // Firebase's proprietary API for a native app, which this project doesn't
+  // have and isn't building.
+  VAPID_PUBLIC_KEY: z.string().optional(),
+  VAPID_PRIVATE_KEY: z.string().optional(),
+  VAPID_SUBJECT: z.string().optional(),
 });
 
 export const env = envSchema.parse(process.env);
@@ -47,4 +60,7 @@ if (env.NODE_ENV === "production" && (!env.ROUTING_ENGINE_URL || !env.GEOCODER_U
   throw new Error(
     "ROUTING_ENGINE_URL and GEOCODER_URL are required in production — fares must come from a real route, never an estimate.",
   );
+}
+if (env.NODE_ENV === "production" && (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY || !env.VAPID_SUBJECT)) {
+  throw new Error("VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT are required in production for push delivery.");
 }

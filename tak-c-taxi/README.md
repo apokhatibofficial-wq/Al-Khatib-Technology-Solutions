@@ -367,10 +367,59 @@ audit entry recording the real actor and the real before/after status;
 double-approving rejected; and a regular (non-admin) user forbidden from
 every `/admin/*` route.
 
-### Not built yet (phases 8-9, in the order the doc specifies)
+## What's built (Phase 8 — notifications)
 
-8. Notifications (Web Push / FCM — the `Notification` row and admin
-   authoring UI both already exist; the actual push delivery doesn't)
+- **Real Web Push delivery** (`notifications/push.ts`), standard VAPID —
+  not a Firebase Admin SDK / FCM server integration. §11 is explicit this
+  is a PWA with no native app and no app store; Chrome's push service is
+  reached the same standard way every other browser's is, over the Push
+  API, so there's no separate proprietary integration to build for it.
+  `FCM_SERVER_KEY` stays defined (§13 names it) but genuinely unused —
+  documented in `env.ts` and `.env.example` rather than silently ignored.
+- **`deliverNotification`** (`notifications/deliver.ts`) resolves real
+  targets (a specific recipient, or a broadcast fanned out across
+  `PASSENGER`/`DRIVER`/`ALL`'s actual `PushSubscription` rows — `ADMIN`
+  has no push channel at all, by schema, not a gap: `AdminUser` has no
+  subscription relation, §3), sends to each, and writes back what
+  *actually* happened — `SENT`, `FAILED`, `NO_SUBSCRIPTIONS`,
+  `NOT_CONFIGURED`, or `NO_CHANNEL`. Phase 7 could only ever leave a
+  notification at `"QUEUED"`; claiming `SENT` there would have been
+  exactly the fabricated status "no fake data" rules out. Wired into
+  `POST /admin/notifications`.
+- **Dead-subscription cleanup**: a `404`/`410` from a push service means
+  the subscription is gone for good (uninstalled, permission revoked,
+  browser data cleared) — standard Web Push practice is to delete it
+  rather than keep retrying forever, done automatically in `push.ts`.
+- **`POST`/`DELETE /push-subscriptions`** and **`GET
+  /push/vapid-public-key`** — infrastructure the doc's §4 endpoint list
+  doesn't separately name but a PWA client needs regardless: it has to
+  fetch the public key before calling `pushManager.subscribe()`, and
+  register/unregister the resulting subscription somewhere.
+- **Closed a gap flagged back in phase 2**: §10's threat table lists
+  "إشعار جلسة جديدة" (new-session notification) as an applied control
+  against account takeover. `createSession` (not `rotateSession` — a
+  refresh is a continuation, not a new session) now fires one on every
+  fresh login, fire-and-forget so a notification failure can never break
+  login itself.
+
+Verified against a real (self-signed, HTTPS — `web-push` always speaks
+HTTPS regardless of the endpoint's declared scheme, so a plain-HTTP stub
+silently never got a request until this was caught) local stub shaped
+like a real push service: registered a *cryptographically real* push
+subscription (an actual P-256 EC key pair, not placeholder strings — junk
+keys fail in `web-push`'s own encryption step before any network call
+happens), then confirmed the stub actually received a real
+VAPID-authenticated, `aes128gcm`-encrypted request with a non-empty body
+— not just that the HTTP call returned 201. Confirmed a fresh login
+queues a real `Notification` row and honestly reports
+`NO_SUBSCRIPTIONS` before one exists. Confirmed a `410` response gets
+the dead subscription deleted from the database automatically, that a
+live sibling subscription still receives the same notification, and that
+unsubscribing removes it for good — leaving a subsequent notification to
+honestly report `NO_SUBSCRIPTIONS` again rather than a stale `SENT`.
+
+### Not built yet (phase 9)
+
 9. Tests & security review
 
 Several of these need real external credentials/infra this repo can't

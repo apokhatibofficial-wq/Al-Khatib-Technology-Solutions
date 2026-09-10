@@ -10,6 +10,7 @@ import { registerPricingRoutes } from "./modules/pricing/routes.js";
 import { registerRideRoutes } from "./modules/rides/routes.js";
 import { registerRealtimeRoutes } from "./modules/realtime/websocket.js";
 import { registerAdminRoutes } from "./modules/admin/routes.js";
+import { registerNotificationRoutes } from "./modules/notifications/routes.js";
 
 export async function buildServer() {
   const app = Fastify({
@@ -44,6 +45,7 @@ export async function buildServer() {
   await registerRideRoutes(app);
   await registerRealtimeRoutes(app);
   await registerAdminRoutes(app);
+  await registerNotificationRoutes(app);
 
   return app;
 }

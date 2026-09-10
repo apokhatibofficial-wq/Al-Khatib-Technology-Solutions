@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "../../db/client.js";
 import { requireAdminRole } from "../auth/guard.js";
 import { recordAudit } from "./audit.js";
+import { deliverNotification } from "../notifications/deliver.js";
 
 const pageSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -299,7 +300,13 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       newValue: notification,
       request,
     });
-    return reply.code(201).send(notification);
+
+    // Attempt real delivery now (phase 8) rather than leaving the row at
+    // "QUEUED" forever — deliverNotification sets the real outcome
+    // (SENT / FAILED / NO_SUBSCRIPTIONS / NOT_CONFIGURED / NO_CHANNEL).
+    await deliverNotification(notification.id);
+    const delivered = await prisma.notification.findUniqueOrThrow({ where: { id: notification.id } });
+    return reply.code(201).send(delivered);
   });
 
   // ---- Audit log itself ---------------------------------------------------
