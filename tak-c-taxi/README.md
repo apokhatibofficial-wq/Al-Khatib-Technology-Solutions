@@ -205,10 +205,59 @@ time; idempotent replay of `/end` returning a byte-identical cached
 response; the full `RideStateEvent` audit trail in order; and the IDOR
 check rejecting an unrelated driver's `GET /rides/:id`.
 
-### Not built yet (phases 5-9, in the order the doc specifies)
+## What's built (Phase 5 — real-time & ETA)
 
-5. Real-time & ETA (WebSocket, Redis — including migrating
-   `DriverLiveLocation` off Postgres, per the note above)
+- **Driver live locations moved to Redis** (`realtime/geo.ts`), replacing
+  phase 4's Postgres `DriverLiveLocation` stand-in exactly as that
+  migration's note said it would: one Redis GEO set (`GEOADD`/`GEOSEARCH`
+  — native geospatial nearest-N, no PostGIS needed for this part) plus a
+  companion per-driver hash with a 90s TTL for staleness. Presence in the
+  geo set *is* "online"; a lapsed hash is cleaned up lazily the next time
+  that driver would've matched. `assignment.ts`'s candidate query (§7) now
+  reads from this, with a defense-in-depth re-check of `Driver.status`
+  against Postgres in case an admin suspends someone mid-session.
+- **WebSocket server** (`realtime/websocket.ts`) — `GET /ws?token=...`
+  (query param, since browsers can't set custom headers on a WS upgrade),
+  same access-token verification as every REST route. Three room shapes,
+  verbatim from §6: `ride:{id}`, `driver:{id}`, `city:{id}:drivers`
+  (admin-only). Subscribing to a room re-runs the same ownership check as
+  `GET /rides/:id` (§10) — a stranger's subscribe attempt gets a same-
+  shape `error` message, not a hint that the ride exists.
+- **Redis Pub/Sub is the actual broadcast transport** (§2's explicit
+  choice, not just an implementation detail): `realtime/broadcast.ts`
+  publishes to Redis on every `POST /driver/location`; each server
+  process's `websocket.ts` maintains its own local map of which sockets
+  care about which channel and only subscribes Redis to channels at least
+  one local socket wants. This is what makes it correct to run more than
+  one server instance later, not just correct for the single instance this
+  is tested against.
+- **ETA** (`realtime/eta.ts`) — computed server-side from a real
+  `geoProvider.route()` call on every location update, from the driver's
+  current position to wherever they're actually heading (pickup before
+  the trip starts, destination after) — never interpolated or held
+  constant server-side, matching §6's explicit rule. Returns `null` (never
+  a fabricated number) if the route call fails, so a client can show "ETA
+  paused" per §6 rather than a fake countdown; wiring that up is a client-
+  side (PWA) concern outside this backend.
+- Client-side position smoothing (§6: interpolating between two stored
+  points, rotating the car icon from the bearing between them) is
+  explicitly a rendering concern for the existing frontend prototypes
+  (§15) this backend serves, not something a Fastify API does — this
+  phase's job is making sure what it *sends* (real coordinates, a real
+  server-computed ETA, at the right cadence) is honest.
+
+Verified against the real local Redis + WebSocket stack: a full ride
+booked and matched entirely through Redis-backed candidate search (no
+Postgres geo query involved); a rider's WebSocket receiving a live
+location update **with a real server-computed ETA** the moment the
+driver's phone would have sent one; a stranger's room-subscribe attempt
+rejected the same way an IDOR probe on the REST API is; an unauthenticated
+WebSocket connection closed immediately; and an offline driver correctly
+disappearing from matching (`NO_DRIVER_FOUND` where they'd otherwise have
+been the only candidate).
+
+### Not built yet (phases 6-9, in the order the doc specifies)
+
 6. Invoices (the waiting counter itself is already built — see phase 4)
 7. Admin panel & audit log
 8. Notifications (Web Push / FCM)
@@ -226,6 +275,8 @@ tile/routing service, VAPID/FCM keys, S3-compatible storage) — see
 - Node.js 20+
 - PostgreSQL with the PostGIS extension available (`CREATE EXTENSION postgis`
   requires it to be installed on the server, not just enabled per-database)
+- Redis (phase 5+ — driver matching and realtime both hard-depend on it,
+  no degraded mode)
 
 ### 2. Install dependencies
 

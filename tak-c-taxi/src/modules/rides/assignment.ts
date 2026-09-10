@@ -1,6 +1,7 @@
 import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "../../db/client.js";
 import { transitionRide } from "./state-machine.js";
+import { findNearbyDriverIds } from "../realtime/geo.js";
 import type { GeoPoint } from "../geo/provider.js";
 
 const SEARCH_RADIUS_M = 5000; // Not specified by the doc — a documented default.
@@ -21,20 +22,24 @@ function clearPendingTimeout(rideId: string): void {
   }
 }
 
-/** §7: online, approved, not already offered this ride, nearest first. */
+/**
+ * §7: online (presence in Redis's geo set IS "online" — see realtime/geo.ts),
+ * approved, not already offered this ride, nearest first. Overfetches from
+ * Redis since GEOSEARCH can't exclude members server-side, then applies the
+ * exclusion + a defense-in-depth re-check of Driver.status (in case an
+ * admin suspended a driver mid-session — §10: never trust a stale claim).
+ */
 async function findCandidateDrivers(pickup: GeoPoint, excludeDriverIds: string[]): Promise<string[]> {
-  const rows = await prisma.$queryRaw<{ driverId: string }[]>`
-    SELECT dl."driverId"
-    FROM "DriverLiveLocation" dl
-    JOIN "Driver" d ON d.id = dl."driverId"
-    WHERE d."isOnline" = true
-      AND d.status = 'APPROVED'
-      AND dl."driverId" NOT IN (SELECT unnest(${excludeDriverIds}::text[]))
-      AND ST_DWithin(dl.point, ST_SetSRID(ST_MakePoint(${pickup.lng}, ${pickup.lat}), 4326), ${SEARCH_RADIUS_M})
-    ORDER BY ST_Distance(dl.point, ST_SetSRID(ST_MakePoint(${pickup.lng}, ${pickup.lat}), 4326))
-    LIMIT ${MAX_CANDIDATES}
-  `;
-  return rows.map((r) => r.driverId);
+  const nearby = await findNearbyDriverIds(pickup, SEARCH_RADIUS_M, MAX_CANDIDATES + excludeDriverIds.length);
+  const candidates = nearby.filter((id) => !excludeDriverIds.includes(id));
+  if (candidates.length === 0) return [];
+
+  const approved = await prisma.driver.findMany({
+    where: { id: { in: candidates }, status: "APPROVED" },
+    select: { id: true },
+  });
+  const approvedIds = new Set(approved.map((d) => d.id));
+  return candidates.filter((id) => approvedIds.has(id)).slice(0, MAX_CANDIDATES);
 }
 
 /** Kicks off (or continues) an offer wave: send to the next untried candidate, or give up. */

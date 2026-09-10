@@ -218,25 +218,19 @@ model Driver {
   rideLocations  RideLocation[]
   waitingEvents  WaitingEvent[]
   ratingsReceived Rating[]
-  liveLocation   DriverLiveLocation?
 
   @@index([status])
 }
 
-/// §7 candidate matching reads from a source the doc calls `driver_live`,
-/// distinct from the durable `Driver` row above — see the phase 1 schema
-/// header. This IS that source, as a plain Postgres table for now: phase 5
-/// migrates it to Redis (matching §1's architecture diagram and §6's
-/// 2-8s update cadence, which is real-time-store territory, not this).
-/// One row per driver, upserted on every POST /driver/location.
-model DriverLiveLocation {
-  driverId  String   @id
-  driver    Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
-  /// geography(Point, 4326).
-  point     Unsupported("geography(Point, 4326)")
-  accuracyM Float
-  updatedAt DateTime @updatedAt
-}
+// §7 candidate matching reads from a source the doc calls `driver_live`,
+// distinct from the durable Driver row above — see the phase 1 schema
+// header. Phase 4 stood that in with a plain-Postgres DriverLiveLocation
+// table (dropped in the migration that added Redis, see the phase 5 note
+// on the migration below); phase 5 replaces it with Redis's native
+// geospatial commands (GEOADD/GEOSEARCH) in src/modules/realtime/geo.ts —
+// this is exactly the live-locations store §1's architecture diagram
+// calls for, matching §6's 2-8s update cadence far better than a Postgres
+// row upsert at that frequency would.
 
 model Vehicle {
   id        String   @id @default(cuid())

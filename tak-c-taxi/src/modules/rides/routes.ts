@@ -6,6 +6,8 @@ import { requireAuth, requireDriver } from "../auth/guard.js";
 import { transitionRide, InvalidTransitionError } from "./state-machine.js";
 import { startSearching, acceptOffer, declineOffer, OfferNotAcceptableError } from "./assignment.js";
 import { withIdempotency } from "./idempotency.js";
+import { setDriverLocation, clearDriverLocation } from "../realtime/geo.js";
+import { broadcastDriverLocation } from "../realtime/broadcast.js";
 
 const pointSchema = z.object({ lat: z.coerce.number().min(-90).max(90), lng: z.coerce.number().min(-180).max(180) });
 
@@ -157,7 +159,7 @@ export async function registerRideRoutes(app: FastifyInstance): Promise<void> {
       data: { isOnline: body.data.online, lastSeenAt: new Date() },
     });
     if (!body.data.online) {
-      await prisma.driverLiveLocation.deleteMany({ where: { driverId: request.driver!.id } });
+      await clearDriverLocation(request.driver!.id);
     }
     return reply.send({ online: body.data.online });
   });
@@ -169,13 +171,11 @@ export async function registerRideRoutes(app: FastifyInstance): Promise<void> {
     if (!body.success) return reply.code(400).send({ error: body.error.issues[0]?.message });
 
     // Batched (§4: "POST /driver/location (batched)") — only the latest
-    // point matters for DriverLiveLocation's one-row-per-driver shape.
+    // point matters for the live (Redis) position; historical breadcrumbs
+    // during an active ride are RideLocation's job (phase 6), not this.
     const latest = body.data.points[body.data.points.length - 1]!;
-    await prisma.$executeRaw`
-      INSERT INTO "DriverLiveLocation" ("driverId", point, "accuracyM", "updatedAt")
-      VALUES (${request.driver!.id}, ST_SetSRID(ST_MakePoint(${latest.lng}, ${latest.lat}), 4326), ${latest.accuracyM}, now())
-      ON CONFLICT ("driverId") DO UPDATE SET point = EXCLUDED.point, "accuracyM" = EXCLUDED."accuracyM", "updatedAt" = now()
-    `;
+    await setDriverLocation(request.driver!.id, latest, latest.accuracyM);
+    await broadcastDriverLocation(request.driver!.id, latest, latest.accuracyM);
     return reply.code(204).send();
   });
 

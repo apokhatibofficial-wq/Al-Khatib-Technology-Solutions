@@ -1,6 +1,7 @@
 import { buildServer } from "./server.js";
 import { env } from "./config/env.js";
 import { prisma } from "./db/client.js";
+import { redis, redisSubscriber } from "./modules/realtime/redis.js";
 
 const app = await buildServer();
 
@@ -8,6 +9,8 @@ async function shutdown(signal: string) {
   app.log.info({ signal }, "shutting down");
   await app.close();
   await prisma.$disconnect();
+  redis.disconnect();
+  redisSubscriber.disconnect();
   process.exit(0);
 }
 

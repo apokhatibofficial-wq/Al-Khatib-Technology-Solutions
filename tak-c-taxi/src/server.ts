@@ -1,11 +1,14 @@
 import Fastify from "fastify";
 import cookie from "@fastify/cookie";
+import websocket from "@fastify/websocket";
 import { env } from "./config/env.js";
 import { prisma } from "./db/client.js";
+import { redis } from "./modules/realtime/redis.js";
 import { registerAuthRoutes } from "./modules/auth/routes.js";
 import { registerGeoRoutes } from "./modules/geo/routes.js";
 import { registerPricingRoutes } from "./modules/pricing/routes.js";
 import { registerRideRoutes } from "./modules/rides/routes.js";
+import { registerRealtimeRoutes } from "./modules/realtime/websocket.js";
 
 export async function buildServer() {
   const app = Fastify({
@@ -21,15 +24,16 @@ export async function buildServer() {
   });
 
   await app.register(cookie);
+  await app.register(websocket);
 
-  // Real liveness + DB-connectivity check — no mocked/hardcoded "ok".
+  // Real liveness + dependency-connectivity check — no mocked/hardcoded "ok".
   app.get("/health", async (_request, reply) => {
     try {
-      await prisma.$queryRaw`SELECT 1`;
-      return reply.send({ status: "ok", db: "up", time: new Date().toISOString() });
+      await Promise.all([prisma.$queryRaw`SELECT 1`, redis.ping()]);
+      return reply.send({ status: "ok", db: "up", redis: "up", time: new Date().toISOString() });
     } catch (err) {
-      app.log.error(err, "health check: database unreachable");
-      return reply.code(503).send({ status: "error", db: "down" });
+      app.log.error(err, "health check: a dependency is unreachable");
+      return reply.code(503).send({ status: "error" });
     }
   });
 
@@ -37,6 +41,7 @@ export async function buildServer() {
   await registerGeoRoutes(app);
   await registerPricingRoutes(app);
   await registerRideRoutes(app);
+  await registerRealtimeRoutes(app);
 
   return app;
 }

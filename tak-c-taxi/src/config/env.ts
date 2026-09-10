@@ -27,6 +27,13 @@ const envSchema = z.object({
   // in production.
   ROUTING_ENGINE_URL: z.string().optional(),
   GEOCODER_URL: z.string().optional(),
+
+  // Real-time (phase 5, §1/§6). Live driver locations (GEOADD/GEOSEARCH)
+  // and the ride/driver/city pub-sub channels both live here — unlike the
+  // optional vars above, there's no degraded mode: driver matching
+  // (assignment.ts) hard-depends on this from phase 5 onward, so it's
+  // required in every environment, not just production.
+  REDIS_URL: z.string().min(1, "REDIS_URL is not set — driver matching and realtime both depend on it."),
 });
 
 export const env = envSchema.parse(process.env);
