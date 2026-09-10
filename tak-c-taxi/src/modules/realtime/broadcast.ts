@@ -3,9 +3,8 @@ import { redis } from "./redis.js";
 import { roomChannel } from "./rooms.js";
 import { computeEtaSeconds } from "./eta.js";
 import { findCityForPoint } from "../geo/city.js";
+import { ACTIVE_RIDE_STATES } from "../rides/state-machine.js";
 import type { GeoPoint } from "../geo/provider.js";
-
-const ACTIVE_RIDE_STATES = ["DRIVER_ACCEPTED", "DRIVER_ARRIVING", "DRIVER_ARRIVED", "TRIP_STARTED", "WAITING"] as const;
 
 async function ridePoint(rideId: string, column: "pickup" | "dest"): Promise<GeoPoint | null> {
   const rows = await prisma.$queryRawUnsafe<{ lat: number; lng: number }[]>(

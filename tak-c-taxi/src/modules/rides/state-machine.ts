@@ -32,6 +32,16 @@ const TRANSITIONS: Record<RideState, RideState[]> = {
   NO_DRIVER_FOUND: [],
 };
 
+/**
+ * A driver in any of these states owns exactly one ride right now. Used
+ * everywhere something needs "this driver's current ride, if any" —
+ * §7's "NOT in_ride" candidate filter (assignment.ts), attaching location
+ * breadcrumbs to the right ride (rides/routes.ts), and deciding which
+ * WebSocket rooms a location update fans out to (realtime/broadcast.ts).
+ * One definition so those three can't quietly drift apart.
+ */
+export const ACTIVE_RIDE_STATES = ["DRIVER_ACCEPTED", "DRIVER_ARRIVING", "DRIVER_ARRIVED", "TRIP_STARTED", "WAITING"] as const;
+
 export class InvalidTransitionError extends Error {}
 
 /**

@@ -3,11 +3,12 @@ import { z } from "zod";
 import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "../../db/client.js";
 import { requireAuth, requireDriver } from "../auth/guard.js";
-import { transitionRide, InvalidTransitionError } from "./state-machine.js";
+import { transitionRide, InvalidTransitionError, ACTIVE_RIDE_STATES } from "./state-machine.js";
 import { startSearching, acceptOffer, declineOffer, OfferNotAcceptableError } from "./assignment.js";
 import { withIdempotency } from "./idempotency.js";
 import { setDriverLocation, clearDriverLocation } from "../realtime/geo.js";
 import { broadcastDriverLocation } from "../realtime/broadcast.js";
+import { issueInvoice } from "../pricing/invoice.js";
 
 const pointSchema = z.object({ lat: z.coerce.number().min(-90).max(90), lng: z.coerce.number().min(-180).max(180) });
 
@@ -84,7 +85,8 @@ export async function registerRideRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string };
     const ride = await loadRideForActor(id, request.actor!);
     if (!ride) return reply.code(404).send({ error: "Not found" });
-    return reply.send(ride);
+    const invoice = ride.state === "TRIP_COMPLETED" ? await prisma.invoice.findUnique({ where: { rideId: id } }) : null;
+    return reply.send({ ...ride, invoice });
   });
 
   app.post("/rides/:id/cancel", { preHandler: requireAuth }, async (request, reply) => {
@@ -164,18 +166,41 @@ export async function registerRideRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ online: body.data.online });
   });
 
+  const locationPointSchema = pointSchema.extend({
+    accuracyM: z.number().positive(),
+    deviceTs: z.coerce.date(),
+    speedMps: z.number().nonnegative().optional(),
+    heading: z.number().min(0).max(360).optional(),
+  });
+
   app.post("/driver/location", { preHandler: requireDriver }, async (request, reply) => {
-    const body = z.object({ points: z.array(pointSchema.extend({ accuracyM: z.number().positive() })).min(1) }).safeParse(
-      request.body,
-    );
+    const body = z.object({ points: z.array(locationPointSchema).min(1) }).safeParse(request.body);
     if (!body.success) return reply.code(400).send({ error: body.error.issues[0]?.message });
 
-    // Batched (§4: "POST /driver/location (batched)") — only the latest
-    // point matters for the live (Redis) position; historical breadcrumbs
-    // during an active ride are RideLocation's job (phase 6), not this.
+    // Only the latest point matters for the live (Redis) position...
     const latest = body.data.points[body.data.points.length - 1]!;
     await setDriverLocation(request.driver!.id, latest, latest.accuracyM);
     await broadcastDriverLocation(request.driver!.id, latest, latest.accuracyM);
+
+    // ...but §4's "batched" send exists for exactly this: catching up
+    // RideLocation's historical trail after a connectivity gap, not just
+    // reporting where the driver is right now. Only persisted while
+    // there's an active ride to attach the breadcrumbs to.
+    const activeRide = await prisma.ride.findFirst({
+      where: { driverId: request.driver!.id, state: { in: [...ACTIVE_RIDE_STATES] } },
+      orderBy: { requestedAt: "desc" },
+      select: { id: true },
+    });
+    if (activeRide) {
+      for (const p of body.data.points) {
+        await prisma.$executeRaw`
+          INSERT INTO "RideLocation" ("rideId", "driverId", point, "accuracyM", "speedMps", heading, "deviceTs", "serverTs")
+          VALUES (${activeRide.id}, ${request.driver!.id},
+                  ST_SetSRID(ST_MakePoint(${p.lng}, ${p.lat}), 4326), ${p.accuracyM}, ${p.speedMps ?? null}, ${p.heading ?? null}, ${p.deviceTs}, now())
+        `;
+      }
+    }
+
     return reply.code(204).send();
   });
 
@@ -204,7 +229,7 @@ export async function registerRideRoutes(app: FastifyInstance): Promise<void> {
   async function driverTransition(
     endpoint: string,
     from: string,
-    to: "DRIVER_ARRIVED" | "TRIP_STARTED" | "WAITING" | "TRIP_COMPLETED",
+    to: "DRIVER_ARRIVED" | "TRIP_STARTED",
   ) {
     app.post(endpoint, { preHandler: requireDriver }, async (request, reply) => {
       const { id } = request.params as { id: string };
@@ -229,11 +254,8 @@ export async function registerRideRoutes(app: FastifyInstance): Promise<void> {
             throw err;
           }
 
-          const extra: Record<string, unknown> = {};
-          if (to === "TRIP_STARTED" && from === "DRIVER_ARRIVED") extra["startedAt"] = new Date().toISOString();
-          if (to === "TRIP_COMPLETED") extra["endedAt"] = new Date().toISOString();
-          if (Object.keys(extra).length > 0) {
-            await prisma.ride.update({ where: { id }, data: extra as { startedAt?: Date; endedAt?: Date } });
+          if (to === "TRIP_STARTED" && from === "DRIVER_ARRIVED") {
+            await prisma.ride.update({ where: { id }, data: { startedAt: new Date() } });
           }
 
           return { status: 200, body: { id, state: to } };
@@ -245,7 +267,51 @@ export async function registerRideRoutes(app: FastifyInstance): Promise<void> {
 
   await driverTransition("/rides/:id/arrived", "DRIVER_ARRIVING", "DRIVER_ARRIVED");
   await driverTransition("/rides/:id/start", "DRIVER_ARRIVED", "TRIP_STARTED");
-  await driverTransition("/rides/:id/end", "TRIP_STARTED", "TRIP_COMPLETED");
+
+  // Not folded into driverTransition above: ending a ride also issues its
+  // invoice (§4 — "POST /rides/:id/end → issues invoice server-side"),
+  // which arrived->started/start don't need.
+  app.post("/rides/:id/end", { preHandler: requireDriver }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = pointSchema.partial().safeParse(request.body ?? {});
+    if (!body.success) return reply.code(400).send({ error: body.error.issues[0]?.message });
+    const point = body.data.lat !== undefined && body.data.lng !== undefined ? { lat: body.data.lat, lng: body.data.lng } : undefined;
+
+    const { status, body: respBody } = await withIdempotency(
+      request.driver!.id,
+      "/rides/:id/end",
+      idempotencyKey(request),
+      async () => {
+        const ride = await prisma.ride.findUnique({ where: { id } });
+        if (!ride || ride.driverId !== request.driver!.id) return { status: 404, body: { error: "Not found" } };
+
+        try {
+          await transitionRide(id, "TRIP_COMPLETED", { point, actorId: request.driver!.id });
+        } catch (err) {
+          if (err instanceof InvalidTransitionError) return { status: 409, body: { error: err.message } };
+          throw err;
+        }
+        await prisma.ride.update({ where: { id }, data: { endedAt: new Date() } });
+
+        const invoice = await issueInvoice(id, point);
+        return {
+          status: 200,
+          body: {
+            id,
+            state: "TRIP_COMPLETED",
+            invoice: {
+              id: invoice.id,
+              totalCents: invoice.totalCents,
+              currency: invoice.currency,
+              distanceM: invoice.distanceM,
+              waitingS: invoice.waitingS,
+            },
+          },
+        };
+      },
+    );
+    return reply.code(status).send(respBody);
+  });
 
   app.post("/rides/:id/waiting/start", { preHandler: requireDriver }, async (request, reply) => {
     const { id } = request.params as { id: string };

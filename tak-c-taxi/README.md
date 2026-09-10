@@ -256,9 +256,68 @@ WebSocket connection closed immediately; and an offline driver correctly
 disappearing from matching (`NO_DRIVER_FOUND` where they'd otherwise have
 been the only candidate).
 
-### Not built yet (phases 6-9, in the order the doc specifies)
+## Bug fixed this phase: a driver mid-trip was still matchable for a second ride
 
-6. Invoices (the waiting counter itself is already built — see phase 4)
+`assignment.ts`'s candidate query (§7) checked "online" (Redis) and
+"approved" (Postgres) but had silently dropped §7's third, explicitly-named
+filter — `NOT in_ride`. The phase-1 schema notes even called out that
+"in_ride" would need to come from live state once it existed, and then
+phase 4/5 built that live state and never actually applied the filter. It
+surfaced while writing this phase's tests: a driver already `DRIVER_
+ACCEPTED` on one ride was still being offered a second one, because
+nothing excluded them. Fixed by adding a `ridesAsDriver: { none: { state:
+{ in: ACTIVE_RIDE_STATES } } }` condition to the candidate query — and
+since that "which states count as active" list was already duplicated
+across `assignment.ts`, `realtime/broadcast.ts`, and the `/driver/location`
+handler, it's now one exported constant (`ACTIVE_RIDE_STATES` in
+`state-machine.ts`) all three import, so they can't drift apart again.
+Verified directly: a driver mid-trip on ride A is now excluded from ride
+B's matching (`NO_DRIVER_FOUND` when they'd otherwise have been the only
+candidate).
+
+## What's built (Phase 6 — invoices)
+
+- **`issueInvoice`** (`pricing/invoice.ts`), called from `POST
+  /rides/:id/end` right after the ride transitions to `TRIP_COMPLETED`
+  (§4: "issues invoice server-side"). Reuses `calculateFare` from phase 3
+  unchanged — the fare formula doesn't change at ride-end, only its
+  inputs do:
+  - **Distance**: §4's explicit rule is "يُعاد الحساب من المسافة
+    المسجّلة فعليًا" (recomputed from the actually-recorded distance) —
+    never the original quote's estimate. Computed as the geodesic length
+    of the driver's real recorded GPS trail (`ST_Length(ST_MakeLine(...
+    ORDER BY "serverTs")::geography)` over `RideLocation`, from
+    `startedAt` onward — the trip itself, not the driver's drive to
+    pickup). Falls back to the quote's `plannedDistanceM` only when there
+    aren't enough breadcrumbs to form a line; that fallback is itself a
+    real earlier route call, not an invented number.
+  - **Waiting time**: sum of `durationS` across every `WaitingEvent` for
+    the ride (there can be more than one if `TRIP_STARTED ⇄ WAITING`
+    toggled more than once). If `/end` is called directly from `WAITING`
+    without an explicit `/waiting/stop` first, the still-open event is
+    closed in the same call so its time isn't silently dropped from the
+    bill.
+  - Same `pricing_version_id` the ride was quoted under (stored on the
+    `Ride` row since phase 4), never whatever's currently effective —
+    §9's versioning exists precisely so a mid-ride pricing change doesn't
+    change what a rider already in a ride gets charged.
+- **`RideLocation` is now actually written to** (`POST /driver/location`),
+  not just Redis's live position — the historical trail invoicing needs.
+  Only persisted while the driver has an active ride, and only for the
+  trip itself, matching the distance calculation above.
+- `GET /rides/:id` includes the invoice once the ride is `TRIP_COMPLETED`.
+
+Verified end to end with a real multi-point simulated trail (not a
+straight line): the invoice's `distanceM` matched a hand-computed
+haversine sum of that trail to within ~10m — and, crucially, did *not*
+match the original quote's planned distance, proving the real trail was
+used rather than the estimate. Waiting time matched real elapsed seconds.
+Total fare was hand-verified against the actual seeded Idlib pricing
+config. Replaying `/end` doesn't create a second invoice (confirmed
+directly against the database, not just the HTTP response).
+
+### Not built yet (phases 7-9, in the order the doc specifies)
+
 7. Admin panel & audit log
 8. Notifications (Web Push / FCM)
 9. Tests & security review

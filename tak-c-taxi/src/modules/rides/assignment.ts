@@ -1,6 +1,6 @@
 import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "../../db/client.js";
-import { transitionRide } from "./state-machine.js";
+import { transitionRide, ACTIVE_RIDE_STATES } from "./state-machine.js";
 import { findNearbyDriverIds } from "../realtime/geo.js";
 import type { GeoPoint } from "../geo/provider.js";
 
@@ -24,22 +24,29 @@ function clearPendingTimeout(rideId: string): void {
 
 /**
  * §7: online (presence in Redis's geo set IS "online" — see realtime/geo.ts),
- * approved, not already offered this ride, nearest first. Overfetches from
- * Redis since GEOSEARCH can't exclude members server-side, then applies the
- * exclusion + a defense-in-depth re-check of Driver.status (in case an
- * admin suspended a driver mid-session — §10: never trust a stale claim).
+ * approved, not already on another active ride, not already offered this
+ * ride, nearest first. Overfetches from Redis since GEOSEARCH can't exclude
+ * members server-side, then applies the exclusion + a defense-in-depth
+ * re-check against Postgres (in case an admin suspended a driver mid-
+ * session, or — the bug this comment replaced — a driver already mid-trip
+ * on another ride would otherwise still show up as a fresh candidate;
+ * §10: never trust a stale claim).
  */
 async function findCandidateDrivers(pickup: GeoPoint, excludeDriverIds: string[]): Promise<string[]> {
   const nearby = await findNearbyDriverIds(pickup, SEARCH_RADIUS_M, MAX_CANDIDATES + excludeDriverIds.length);
   const candidates = nearby.filter((id) => !excludeDriverIds.includes(id));
   if (candidates.length === 0) return [];
 
-  const approved = await prisma.driver.findMany({
-    where: { id: { in: candidates }, status: "APPROVED" },
+  const eligible = await prisma.driver.findMany({
+    where: {
+      id: { in: candidates },
+      status: "APPROVED",
+      ridesAsDriver: { none: { state: { in: [...ACTIVE_RIDE_STATES] } } },
+    },
     select: { id: true },
   });
-  const approvedIds = new Set(approved.map((d) => d.id));
-  return candidates.filter((id) => approvedIds.has(id)).slice(0, MAX_CANDIDATES);
+  const eligibleIds = new Set(eligible.map((d) => d.id));
+  return candidates.filter((id) => eligibleIds.has(id)).slice(0, MAX_CANDIDATES);
 }
 
 /** Kicks off (or continues) an offer wave: send to the next untried candidate, or give up. */
