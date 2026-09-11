@@ -839,14 +839,11 @@ real GitHub Actions runner from here — same reasoning as the Docker note.)
 ### DNS / hosting
 
 Domain is already purchased (GoDaddy) — only DNS records need to change,
-once there's a real server to point them at. This backend still needs a
-real email provider configured for OTP delivery (see "OTP switched from
-SMS to email" above — Resend, done and verified), a self-hosted
-routing/geocoding engine actually deployed on a persistent server (the
-software and real data are verified working — see "OSRM verified with
-real Idlib/Dana/Sarmada data" above — but that ran locally in a dev
-sandbox, not somewhere `ROUTING_ENGINE_URL` can point at in production),
-and object storage, before that's true:
+once the deployed server below has a domain pointed at it instead of its
+bare IP. Email (Resend) and routing (OSRM) are done and verified against
+that real deployment — see "Real deployment: GCP free-tier VM" below.
+Still missing: Nominatim/geocoding (deferred — see that section) and
+object storage for driver documents.
 
 | Subdomain | Service |
 | --- | --- |
@@ -859,3 +856,67 @@ and object storage, before that's true:
 Three fully separate environments (production/staging/development) with
 independent databases and keys — the dev environment never touches
 production data.
+
+### Real deployment: GCP free-tier VM (post-phase-9)
+
+The backend is actually running — not just verified locally. A real
+Google Cloud e2-micro VM (`tak-c-taxi-backend`, always-free tier, us-
+central1-a) runs the full stack via `docker-compose.prod.yml`: Postgres+
+PostGIS, Redis, the API, and — unplanned when this section's earlier
+paragraphs were written, but it turned out to fit — a real OSRM container
+serving the same verified Idlib/Dana/Sarmada extract from the "OSRM
+verified with real Idlib/Dana/Sarmada data" section above. `createQuote`
+only calls `geoProvider.route()`, never `geoProvider.geocode()`, so
+`/rides/quote` — the actual fare/route flow — doesn't need Nominatim at
+all; only address-search (`/geo/geocode`, `/geo/reverse`) does, and that's
+still deferred (genuinely heavier: a second Postgres-backed search index
+that doesn't fit this box's 1GB RAM alongside everything else).
+
+Verified end to end against the real, deployed, freshly-migrated database
+(seeded with the real launch config from `scripts/dev-seed.ts` — §9's
+actual numbers, not test fixtures):
+
+```
+$ curl -s http://localhost:3000/health
+{"status":"ok","db":"up","redis":"up","time":"2026-09-11T19:33:33.623Z"}
+
+$ curl -s -X POST http://localhost:3000/rides/quote -H "Content-Type: application/json" \
+    -d '{"pickup":{"lat":36.2135713,"lng":36.7704347},"dest":{"lat":36.2014255,"lng":36.7119201},"pickupLabel":"الدانا","destLabel":"سرمدا"}'
+{"distance_m":7657,"duration_s":784,"fare":510,"currency":"USD","quote_id":"kzx8u135gge0syv4zj5du5xy","expires_at":"2026-09-11T19:38:03.995Z"}
+```
+
+That's a real Dana→Sarmada fare, computed by the real running server, from
+a real OSRM route over real OpenStreetMap data, priced with the real §9
+launch config, against a real Postgres row — the same result (within
+~1m/~1¢ rounding) as the local sandbox verification earlier in this
+document, this time with nothing mocked or local.
+
+NODE_ENV is `development`, not `production`, on this deployment — not a
+shortcut: `GEOCODER_URL` still isn't set, and `src/config/env.ts` is
+supposed to refuse to boot under `NODE_ENV=production` without it. That
+check is doing its job; this box just doesn't satisfy it yet.
+
+Three real bugs surfaced getting here, none of them hit by any earlier
+manual verification because none of it had run inside an actual built
+Docker image against a live daemon before now — see the git history
+(commit messages have full root-cause writeups) for:
+`prisma.config.ts` never being `COPY`'d into the image (so `migrate
+deploy` couldn't find a datasource URL at container runtime), the build
+then failing entirely once that config file made `prisma generate` also
+need a `DATABASE_URL` — at *build* time, before one exists — and
+`schema.prisma`'s `moduleFormat`/`importFileExtension` generator options
+defaulting to "inferred from environment": the same schema and Prisma
+version emitted different (and, in one direction, broken) import
+extensions depending on the exact Node.js patch version running `prisma
+generate`, which differed between the sandbox this was developed in and
+the `node:22-bookworm-slim` image actually pulled on the VM.
+
+**Not done yet**: HTTPS/a real domain (still the bare `http://<external-ip>:3000`
+this section's curl output uses), Nominatim/`GEOCODER_URL`, S3 for driver
+documents. The e2-micro's own outbound reachability from arbitrary
+external networks hasn't been self-tested from this project's own
+development sandbox — that sandbox's egress proxy can't reach arbitrary
+external IPs/ports, only the standard package/API hosts it allowlists —
+so treat "reachable from the public internet on port 3000" as configured
+(a firewall rule opening `tcp:3000` from `0.0.0.0/0` exists) but not
+independently confirmed from outside GCP's own network.
