@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import Fastify from "fastify";
 import cookie from "@fastify/cookie";
 import websocket from "@fastify/websocket";
@@ -13,17 +14,31 @@ import { registerRealtimeRoutes } from "./modules/realtime/websocket.js";
 import { registerAdminRoutes } from "./modules/admin/routes.js";
 import { registerNotificationRoutes } from "./modules/notifications/routes.js";
 
+/**
+ * pino-pretty is a devDependency, deliberately absent from the pruned
+ * production Docker image (see Dockerfile's "runtime-deps" stage) — found
+ * by actually booting that pruned layout with NODE_ENV=development during
+ * phase 9's deployment-infra work: Fastify crashed hard on startup
+ * ("unable to determine transport target for pino-pretty") instead of just
+ * logging less prettily. A misconfigured deploy that leaves NODE_ENV unset
+ * (env.ts's schema defaults it to "development") would hit the exact same
+ * crash. Resolvability is checked explicitly so that scenario degrades to
+ * plain JSON logs instead of refusing to start.
+ */
+function resolvePrettyTransport(): { target: string; options: Record<string, unknown> } | undefined {
+  try {
+    createRequire(import.meta.url).resolve("pino-pretty");
+    return { target: "pino-pretty", options: { translateTime: "HH:MM:ss", ignore: "pid,hostname" } };
+  } catch {
+    return undefined;
+  }
+}
+
 export async function buildServer() {
+  const prettyTransport = env.NODE_ENV === "development" ? resolvePrettyTransport() : undefined;
+
   const app = Fastify({
-    logger:
-      env.NODE_ENV === "development"
-        ? {
-            transport: {
-              target: "pino-pretty",
-              options: { translateTime: "HH:MM:ss", ignore: "pid,hostname" },
-            },
-          }
-        : true,
+    logger: prettyTransport ? { transport: prettyTransport } : true,
   });
 
   await app.register(cookie);

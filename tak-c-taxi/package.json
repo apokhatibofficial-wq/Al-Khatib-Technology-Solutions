@@ -13,7 +13,7 @@
     "db:studio": "CHECKPOINT_DISABLE=1 prisma studio",
     "db:seed": "tsx scripts/dev-seed.ts",
     "admin:create": "tsx scripts/create-admin.ts",
-    "test": "CHECKPOINT_DISABLE=1 tsx --env-file=.env.test --test --test-concurrency=1 \"test/**/*.test.ts\"",
+    "test": "CHECKPOINT_DISABLE=1 tsx --env-file-if-exists=.env.test --test --test-concurrency=1 \"test/**/*.test.ts\"",
     "typecheck:test": "tsc -p tsconfig.test.json --noEmit"
   },
   "dependencies": {

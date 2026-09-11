@@ -662,16 +662,71 @@ to install.
 
 `npm audit` reports 4 high-severity findings in `mysql2`, a transitive
 dependency bundled inside the `prisma` CLI's own multi-database tooling —
-not something this project imports (only the PostgreSQL adapter is used)
-and not part of what actually ships in the running server. The suggested
-`npm audit fix --force` downgrades `prisma` to 6.x, which would break the
+not something this project imports (only the PostgreSQL adapter is used).
+Confirmed, not just asserted: the production Docker image's `runtime-deps`
+stage (see `Dockerfile`) excludes it by construction (`npm ci --omit=dev
+--omit=optional`, since `mysql2` only enters the tree via the `prisma` CLI
+package, which `@prisma/client` pulls in as an *optional* peer dependency —
+`npm prune --omit=dev` alone does not drop it, a real dead end hit while
+building the Dockerfile; see its comments) — `npm audit` on that exact
+`node_modules` reports **0** vulnerabilities. The suggested `npm audit fix
+--force` downgrades `prisma` to 6.x, which would break the
 PostGIS/`Unsupported()` schema and diverge from the sibling project's
-Prisma 7 convention, so it hasn't been applied. Worth re-checking against a
-newer `prisma` release before this goes to production.
+Prisma 7 convention, so it hasn't been applied — and per the above, doesn't
+need to be for the running server. Worth re-checking against a newer
+`prisma` release regardless, since it still affects local dev/CI tooling.
 
-## Deployment (§12, once there's something to deploy)
+## Deployment (§12)
 
-Domain is already purchased (GoDaddy) — only DNS records need to change:
+### Docker
+
+```bash
+docker compose up --build
+```
+
+Brings up Postgres+PostGIS, Redis, runs migrations once (the `migrate`
+service — see the Dockerfile's "migrate" target comment on why this is
+never baked into the server's own startup: N replicas racing to apply the
+same migration at once), then starts the API on `:3000`. This is a local
+development / staging reference, not a secrets source — see
+`docker-compose.yml`'s own header comment; a real deployment supplies its
+own secrets via the target platform's store, not this file.
+
+The `Dockerfile` has three build targets (`docker build --target <name>`):
+
+| Target | Purpose |
+| --- | --- |
+| `build` | Full toolchain — compiles `dist/`. Not deployed directly. |
+| `migrate` | Runs `prisma migrate deploy` once, as its own release-phase job. |
+| `runtime` | The actual server — pruned to production dependencies only (~106MB smaller `node_modules` than a naive `npm prune`, and 0 vs 4 `npm audit` findings — see "Known dependency note" above). |
+
+**Verified without a working Docker daemon** (unavailable in the sandbox
+this was built in — nested containerization is blocked): every stage's
+underlying commands (`npm ci`, `npm run build`, the `runtime-deps` install,
+the assembled `dist/` + pruned `node_modules` layout) were run directly and
+the resulting server was actually started and hit real HTTP requests
+against real Postgres/Redis — see the git history for specifics. `docker
+build`/`docker compose up` themselves have **not** been executed — Docker
+mechanics specifically (multi-stage `COPY --from`, the base image's
+non-root `node` user, `apt-get` inside the image) are standard, well-
+documented behavior, not custom logic, but this is still worth a real
+`docker compose up` smoke test in an environment where the daemon runs
+before relying on it for a real deployment.
+
+### CI
+
+`.github/workflows/tak-c-taxi-ci.yml` runs on every push/PR touching
+`tak-c-taxi/**`: real Postgres+PostGIS and Redis service containers,
+`npm ci`, migrations, typecheck, build, and the full test suite — the same
+steps documented above, run automatically. (Also not executed against a
+real GitHub Actions runner from here — same reasoning as the Docker note.)
+
+### DNS / hosting
+
+Domain is already purchased (GoDaddy) — only DNS records need to change,
+once there's a real server to point them at (see "Is this ready to
+deploy?" — this backend still needs a real SMS/OTP provider, a self-hosted
+routing/geocoding engine, and object storage before that's true):
 
 | Subdomain | Service |
 | --- | --- |

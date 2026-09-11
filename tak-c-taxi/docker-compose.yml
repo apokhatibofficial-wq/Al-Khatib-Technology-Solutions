@@ -1,0 +1,72 @@
+# Local development / staging reference only. The secrets below are the
+# same clearly-marked dev-only placeholders used in .env.example — a real
+# deployment supplies its own via the target platform's secret store (see
+# README.md's "Deployment" section), never this file.
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: tak_c_taxi
+      POSTGRES_PASSWORD: tak_c_taxi
+      POSTGRES_DB: tak_c_taxi
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgis-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tak_c_taxi -d tak_c_taxi"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot: applies migrations, then exits. Never part of the api
+  # service's own startup — see the Dockerfile's "migrate" target comment
+  # on why running it from N replicas at once would be a real race.
+  migrate:
+    build:
+      context: .
+      target: migrate
+    environment:
+      DATABASE_URL: postgresql://tak_c_taxi:tak_c_taxi@postgres:5432/tak_c_taxi
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      target: runtime
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://tak_c_taxi:tak_c_taxi@postgres:5432/tak_c_taxi
+      REDIS_URL: redis://redis:6379
+      JWT_ACCESS_SECRET: dev-only-access-secret-not-for-production-use-32chars-min
+      JWT_REFRESH_SECRET: dev-only-refresh-secret-not-for-production-use-32chars-min
+      # ROUTING_ENGINE_URL / GEOCODER_URL / VAPID_* / OTP_PROVIDER_KEY /
+      # GOOGLE_OAUTH_* intentionally left unset here — see .env.example for
+      # what each one enables; the server degrades gracefully without them
+      # in a non-production NODE_ENV (a 503 on the routes that need them).
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  postgres-data:
