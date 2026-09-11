@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
 import Fastify from "fastify";
 import cookie from "@fastify/cookie";
+import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import rateLimit from "@fastify/rate-limit";
 import { env } from "./config/env.js";
@@ -42,6 +43,10 @@ export async function buildServer() {
   });
 
   await app.register(cookie);
+  // credentials: true so the refresh-token cookie (auth/routes.ts) survives
+  // the frontend's cross-origin fetch — requires an explicit origin list,
+  // never "*", per the CORS spec (see CORS_ORIGINS's comment in env.ts).
+  await app.register(cors, { origin: env.CORS_ORIGINS, credentials: true });
   await app.register(websocket);
 
   // §10's "إساءة استخدام API" threat row: "حدود معدل لكل مستخدم وIP" — a

@@ -51,6 +51,19 @@ const envSchema = z.object({
   VAPID_PUBLIC_KEY: z.string().optional(),
   VAPID_PRIVATE_KEY: z.string().optional(),
   VAPID_SUBJECT: z.string().optional(),
+
+  // The frontends (passenger/driver/admin PWAs) are served from separate
+  // subdomains from this API (tak-c.taxi vs api.tak-c.taxi — see README's
+  // "DNS / hosting" table), so browsers treat every request as cross-
+  // origin. Comma-separated allowed origins; defaults to common local dev
+  // ports so `npm run dev` in a frontend package works against this API
+  // with zero config. No wildcard default — the refresh-token cookie needs
+  // `credentials: true` (server.ts), and CORS forbids combining that with
+  // an open "*" origin anyway.
+  CORS_ORIGINS: z
+    .string()
+    .default("http://localhost:5173,http://localhost:4173")
+    .transform((s) => s.split(",").map((origin) => origin.trim())),
 });
 
 export const env = envSchema.parse(process.env);
