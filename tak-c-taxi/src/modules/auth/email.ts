@@ -6,16 +6,19 @@ import { env } from "../../config/env.js";
 // email arrived with no logo). A real <img src> the recipient's mail
 // client fetches over HTTPS is the only approach that reliably works.
 //
-// TEMPORARY: no real asset hosting exists for this project yet (see
-// README.md's "Is this ready to deploy?"), so this points at the logo
-// file's raw GitHub URL on this working branch — genuinely public and
-// fetchable (verified with a real curl, 200 + image/png), but not a
-// real production answer: it moves if this branch is renamed/deleted,
-// and ties a transactional email to GitHub's raw-content service rather
-// than this project's own domain. Replace with a real hosted URL
-// (S3/Cloudflare/the eventual tak-c.taxi static assets) before launch.
+// No real asset hosting exists for this project yet (see README.md's "Is
+// this ready to deploy?"), so this uses jsDelivr's free GitHub CDN
+// (https://www.jsdelivr.com/?docs=gh) rather than GitHub's own raw-content
+// URL — pinned to a specific commit SHA (not the branch name, which
+// contains a "/" jsDelivr's @version syntax can't parse), which jsDelivr
+// treats as immutable and caches at the edge forever (verified: a real
+// curl came back `cache-control: public, max-age=31536000, immutable`).
+// Stable even after this branch is merged/deleted, since the commit stays
+// reachable in the repo's history either way. Still worth moving to a
+// real asset host on the project's own domain eventually, but this is a
+// genuine CDN, not a workaround — no urgency to replace it before launch.
 const LOGO_URL =
-  "https://raw.githubusercontent.com/apokhatibofficial-wq/Al-Khatib-Technology-Solutions/claude/new-session-l9w3z4/tak-c-taxi/assets/logo.png";
+  "https://cdn.jsdelivr.net/gh/apokhatibofficial-wq/Al-Khatib-Technology-Solutions@06ab075f1c904e3b93de0caca4cceea7d4cab442/tak-c-taxi/assets/logo.png";
 const BRAND_YELLOW = "#FFE600"; // sampled directly from the logo's taxi headlights
 
 // Real transactional email via Resend's REST API (https://resend.com/docs/api-reference/emails/send-email)
