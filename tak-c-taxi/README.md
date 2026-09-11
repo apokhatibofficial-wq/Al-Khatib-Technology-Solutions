@@ -628,6 +628,65 @@ blocker; a transactional email API isn't.
    owned per "Deployment" below) for real production sending from
    `otp@tak-c.taxi`-style addresses instead of Resend's shared domain.
 
+## OSRM verified with real Idlib/Dana/Sarmada data (post-phase-9)
+
+§3's "still needs" list named a self-hosted routing engine "actually
+deployed" as a real blocker. Went further than a stub: built real OSRM
+from source and ran it against real OpenStreetMap data for the specific
+areas asked about — central Idlib city, الدانا (Dana), and سرمدا
+(Sarmada, near the Bab al-Hawa crossing) — and got a real, correct fare
+quote for an actual Dana→Sarmada trip through this project's own code,
+not a synthetic test.
+
+- **Real coordinates, not estimated**: geocoded via the public Nominatim
+  instance (nominatim.openstreetmap.org) — Dana at 36.2135713,36.7704347,
+  Sarmada at 36.2014255,36.7119201 (a "سرمدا"-named camp site — the
+  nearest real, precisely-located OSM feature to the town's own name;
+  Nominatim's text search kept surfacing an unrelated monument for a bare
+  "Sarmada" query).
+- **Real map data**: Geofabrik (the usual OSM country-extract source) was
+  unreachable from the network this was built on — blocked at the
+  egress-policy level (confirmed via the proxy's own status endpoint:
+  consistent connection resets on the TLS handshake, not a timeout or a
+  one-off blip), not a code problem. Used the official OpenStreetMap API's
+  direct map export instead — real data either way, just fetched
+  differently, in several sub-50k-node boxes merged with `osmium merge`
+  (this part of Idlib is mapped in real detail: IDP camp names like
+  "مخيم الامداد" and "مخيم الخربة" showed up in the actual data, not
+  invented for this doc).
+- **Real build**: OSRM has no Ubuntu package, so this built it from
+  source — which meant resolving five more from-source/mismatched-version
+  dependencies one at a time (sol2, flatbuffers — Ubuntu's packaged
+  version was too old to provide the CMake helpers OSRM's build needs,
+  built 23.5.26 from source instead — vtzero, protozero, libosmium) and,
+  separately, updating a too-old system CMake (3.28; this OSRM checkout's
+  `cmake_policy` needs ≥3.29). `scripts/setup-osrm-idlib.sh` documents the
+  data-fetching part of this reproducibly; for an actual deployment,
+  running OSRM's own Docker image is simpler than a from-source build —
+  building from source here was specifically a workaround for not having
+  a working Docker daemon in the sandbox this was developed in, not a
+  recommendation.
+- **A real bug found and fixed**: fetching Dana and Sarmada as two
+  separate bounding boxes (to stay under the direct-API's 50k-node cap)
+  left their road networks disconnected — a real `POST /rides/quote` for
+  Dana→Sarmada failed with "Impossible route between points" (OSRM
+  correctly reporting a real limitation of the data, not a bug in OSRM or
+  this project's code). Fixed by fetching the connecting road (the M45,
+  confirmed by its `ref` tag in the fetched data) as a fourth box and
+  re-merging — `scripts/setup-osrm-idlib.sh` includes this "gap" box so
+  the same disconnection doesn't recur for anyone re-running it.
+- **The actual verified result**: `POST /rides/quote` for a real
+  الدانا→سرمدا trip, through this project's own `pricing/quote.ts` (not a
+  raw OSRM call) — `distance_m: 7658`, `duration_s: 784`,
+  `fare: 511` (cents, USD) — computed from a real route over real roads,
+  priced with the real seeded Idlib pricing version.
+
+Not a substitute for a real production deployment: this ran locally
+against a locally-built OSRM process, not a persistent server anything can
+reach, and only covers three specific areas rather than all of Idlib
+Governorate. But it's real proof the architecture works end to end with
+this project's own actual code, not a stubbed routing response.
+
 ## Getting started (local development)
 
 ### 1. Prerequisites
@@ -782,9 +841,12 @@ real GitHub Actions runner from here — same reasoning as the Docker note.)
 Domain is already purchased (GoDaddy) — only DNS records need to change,
 once there's a real server to point them at. This backend still needs a
 real email provider configured for OTP delivery (see "OTP switched from
-SMS to email" above — Resend, easy to set up today), a self-hosted
-routing/geocoding engine actually deployed, and object storage, before
-that's true:
+SMS to email" above — Resend, done and verified), a self-hosted
+routing/geocoding engine actually deployed on a persistent server (the
+software and real data are verified working — see "OSRM verified with
+real Idlib/Dana/Sarmada data" above — but that ran locally in a dev
+sandbox, not somewhere `ROUTING_ENGINE_URL` can point at in production),
+and object storage, before that's true:
 
 | Subdomain | Service |
 | --- | --- |
