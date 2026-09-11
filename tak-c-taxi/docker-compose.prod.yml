@@ -110,11 +110,16 @@ services:
     restart: unless-stopped
 
   # Real HTTPS, not a self-signed cert: Caddy requests and auto-renews a
-  # real Let's Encrypt certificate for api.tak-c.taxi (DNS A record ->
-  # this box's external IP, set up manually in GoDaddy — Caddy just needs
-  # that to already resolve) and reverse-proxies to the api container.
-  # caddy-data persists the certificate/account state across restarts so
-  # it isn't re-issued (and rate-limited by Let's Encrypt) on every deploy.
+  # real Let's Encrypt certificate for api.tak-c.taxi and tak-c.taxi (DNS
+  # A records -> this box's external IP, set up manually in GoDaddy —
+  # Caddy just needs that to already resolve) and reverse-proxies API
+  # traffic to the api container. It also serves the passenger PWA's
+  # static build directly (./passenger-dist -> the app's own `npm run
+  # build` output, deployed straight to the server the same way
+  # ./osrm-data is, not committed — see that comment below) — no separate
+  # app server needed for a static SPA. caddy-data persists the
+  # certificate/account state across restarts so it isn't re-issued (and
+  # rate-limited by Let's Encrypt) on every deploy.
   caddy:
     image: caddy:2-alpine
     ports:
@@ -122,6 +127,7 @@ services:
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./passenger-dist:/srv/passenger:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on:

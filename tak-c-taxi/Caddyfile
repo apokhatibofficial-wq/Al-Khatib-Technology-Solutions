@@ -1,3 +1,14 @@
 api.tak-c.taxi {
 	reverse_proxy api:3000
 }
+
+# Passenger PWA static build (see docker-compose.prod.yml's caddy service
+# comment). try_files falls back to index.html for client-side routes
+# (react-router's /login, /request, etc.) while still serving real files
+# (assets/, manifest.webmanifest, sw.js) directly when they exist.
+tak-c.taxi, www.tak-c.taxi {
+	root * /srv/passenger
+	try_files {path} /index.html
+	file_server
+	encode gzip
+}
