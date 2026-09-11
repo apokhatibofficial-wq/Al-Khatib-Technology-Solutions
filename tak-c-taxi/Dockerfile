@@ -17,6 +17,15 @@ FROM base AS build
 COPY package.json package-lock.json ./
 COPY prisma.config.ts ./
 COPY prisma ./prisma
+# Build-time-only placeholder: postinstall's `prisma generate` now loads
+# prisma.config.ts (needed so `prisma migrate deploy` can find a real
+# DATABASE_URL at container *runtime* — see the migrate stage), and that
+# config's env("DATABASE_URL") is resolved eagerly by every Prisma command,
+# generate included, even though generate never connects to it — it only
+# reads the schema to emit client code. Without this, the image build
+# itself fails before a real DATABASE_URL exists (that's only injected by
+# docker-compose at container start). Never read past this build stage.
+ENV DATABASE_URL="postgresql://build:build@localhost:5432/build"
 RUN npm ci
 COPY tsconfig.json ./
 COPY src ./src
