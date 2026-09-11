@@ -2,6 +2,8 @@ import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "../../db/client.js";
 import { transitionRide, ACTIVE_RIDE_STATES } from "./state-machine.js";
 import { findNearbyDriverIds } from "../realtime/geo.js";
+import { redis } from "../realtime/redis.js";
+import { roomChannel } from "../realtime/rooms.js";
 import type { GeoPoint } from "../geo/provider.js";
 
 const SEARCH_RADIUS_M = 5000; // Not specified by the doc — a documented default.
@@ -72,6 +74,24 @@ async function offerNextCandidate(rideId: string, pickup: GeoPoint): Promise<voi
   if (ride.state === "SEARCHING_DRIVER" || ride.state === "DRIVER_ASSIGNED") {
     await transitionRide(rideId, "DRIVER_ASSIGNED");
   }
+
+  // The driver app's only signal that an offer exists at all — rooms.ts's
+  // driver:{id} channel was already defined for this in phase 5, just never
+  // published to (offers previously only showed up if a client polled).
+  await redis.publish(
+    roomChannel({ kind: "driver", id: next }),
+    JSON.stringify({
+      type: "ride_offer",
+      rideId,
+      pickup,
+      pickupLabel: ride.pickupLabel,
+      destLabel: ride.destLabel,
+      distanceM: ride.plannedDistanceM,
+      durationS: ride.plannedDurationS,
+      fareCents: ride.quotedFareCents,
+      expiresInMs: OFFER_TIMEOUT_MS,
+    }),
+  );
 
   const timer = setTimeout(() => {
     void expireOffer(rideId, next, pickup);

@@ -18,7 +18,13 @@ function idempotencyKey(request: FastifyRequest): string | undefined {
   return typeof header === "string" ? header : undefined;
 }
 
-/** The ride's rider, its assigned driver, or an admin may view it (§10 IDOR control). */
+/**
+ * The ride's rider, its assigned driver, an admin, or a driver holding a
+ * live (unresponded) offer for it may view it (§10 IDOR control). That
+ * last case matters before DRIVER_ACCEPTED sets ride.driverId at all — a
+ * driver deciding whether to accept an offer still needs to see what
+ * they're being asked to accept.
+ */
 async function loadRideForActor(rideId: string, actor: NonNullable<FastifyRequest["actor"]>) {
   const ride = await prisma.ride.findUnique({ where: { id: rideId } });
   if (!ride) return null;
@@ -29,6 +35,12 @@ async function loadRideForActor(rideId: string, actor: NonNullable<FastifyReques
     const driver = await prisma.driver.findUnique({ where: { id: ride.driverId } });
     if (driver?.userId === actor.actorId) return ride;
   }
+
+  const offer = await prisma.rideOffer.findFirst({
+    where: { rideId, respondedAt: null, driver: { userId: actor.actorId } },
+  });
+  if (offer) return ride;
+
   return null;
 }
 

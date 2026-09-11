@@ -14,6 +14,7 @@ import { registerRideRoutes } from "./modules/rides/routes.js";
 import { registerRealtimeRoutes } from "./modules/realtime/websocket.js";
 import { registerAdminRoutes } from "./modules/admin/routes.js";
 import { registerNotificationRoutes } from "./modules/notifications/routes.js";
+import { registerDriverRoutes } from "./modules/drivers/routes.js";
 
 /**
  * pino-pretty is a devDependency, deliberately absent from the pruned
@@ -81,6 +82,7 @@ export async function buildServer() {
   await registerRealtimeRoutes(app);
   await registerAdminRoutes(app);
   await registerNotificationRoutes(app);
+  await registerDriverRoutes(app);
 
   return app;
 }
