@@ -70,13 +70,13 @@ services:
     build:
       context: .
       target: runtime
-    ports:
-      # Kept published during the HTTPS cutover (see the caddy service
-      # below) as a fallback while that's being verified — remove this
-      # once api.tak-c.taxi/health is confirmed solid over HTTPS, so the
-      # raw origin isn't reachable in parallel with the TLS-terminating
-      # proxy in front of it.
-      - "3000:3000"
+    # No published port here on purpose: HTTPS via the caddy service below
+    # is verified solid (real Let's Encrypt cert issued, /health,
+    # /rides/quote, /geo/geocode all confirmed over https://api.tak-c.taxi
+    # — see README's "Real HTTPS via Caddy + Let's Encrypt"), so the raw
+    # HTTP origin no longer needs to be reachable in parallel with it.
+    # Other containers still reach api:3000 directly over the compose-
+    # internal network — only external host access goes through caddy now.
     environment:
       # NODE_ENV is "production" now — every env.ts requirement is
       # satisfied (EMAIL_*, ROUTING_ENGINE_URL, GEOCODER_URL, VAPID_* all

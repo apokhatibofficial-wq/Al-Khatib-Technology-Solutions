@@ -918,8 +918,9 @@ but a real request from a real outside device/network (`GET
 http://<external-ip>:3000/health`) got the same `{"status":"ok",...}`
 response shown above.
 
-**Not done yet**: HTTPS/a real domain (still the bare `http://<external-ip>:3000`
-this section's curl output uses), S3 for driver documents.
+**Not done yet**: S3 for driver documents, Google OAuth. HTTPS/a real
+domain (this section originally used the bare `http://<external-ip>:3000`
+above) is done — see "Real HTTPS via Caddy + Let's Encrypt" below.
 
 ### Address search via public Nominatim (post-phase-9)
 
@@ -963,3 +964,46 @@ Self-hosting Nominatim remains the real fix once traffic grows past what
 a single free-tier box + the public instance's shared rate limit can
 reasonably support — same "upgrade once paid hosting exists" plan as
 OSRM's own from-source build vs. this box's tight RAM.
+
+### Real HTTPS via Caddy + Let's Encrypt (post-phase-9)
+
+`api.tak-c.taxi` is real now, not a plan — a GoDaddy DNS `A` record
+points it at the deployed server's external IP, and a `caddy` service
+(added to `docker-compose.prod.yml`, config in the repo's own
+`Caddyfile`) reverse-proxies to the `api` container and handles the
+entire TLS certificate lifecycle itself: requesting, serving, and
+renewing a real Let's Encrypt certificate, no manual `certbot`/`nginx`
+config. This also closes out the one thing that had kept `NODE_ENV` at
+`development` even after every `env.ts` production requirement was
+otherwise satisfied — `auth/routes.ts` sets `secure: NODE_ENV ===
+"production"` on the refresh-token cookie, and a Secure cookie served
+over plain HTTP gets silently dropped by browsers (breaking login
+entirely); with real HTTPS in front of the box, `NODE_ENV` is `production`
+now too.
+
+Verified against the actual issued certificate and the real domain, not
+localhost — the raw HTTP origin (`api:3000`) isn't published to the host
+at all anymore; every external request has to go through Caddy's TLS:
+
+```
+$ curl https://api.tak-c.taxi/health
+{"status":"ok","db":"up","redis":"up","time":"2026-09-11T20:34:31.960Z"}
+
+$ curl -X POST https://api.tak-c.taxi/rides/quote -H "Content-Type: application/json" \
+    -d '{"pickup":{"lat":36.2135713,"lng":36.7704347},"dest":{"lat":36.2014255,"lng":36.7119201},"pickupLabel":"الدانا","destLabel":"سرمدا"}'
+{"distance_m":7657,"duration_s":784,"fare":510,"currency":"USD","quote_id":"cc91qd4pcbv6140k8zwll9er",...}
+
+$ curl -X POST https://api.tak-c.taxi/geo/geocode -H "Content-Type: application/json" -d '{"query":"سرمدا, ادلب"}'
+{"results":[{"lat":36.2014255,"lng":36.7119201,"label":"سرمدا, M45, Bab al-Hawa, ..."}]}
+```
+
+Caddy's own logs confirm the certificate came from the real production
+Let's Encrypt CA (`acme-v02.api.letsencrypt.org`, not a staging/test
+endpoint), via a real HTTP-01 challenge actually served to and validated
+by Let's Encrypt's validation servers (visible in the logs as real
+external IPs hitting the challenge path) — not a self-signed or
+locally-trusted cert.
+
+`caddy-data`/`caddy-config` (named volumes) persist the certificate and
+ACME account across container restarts, so a redeploy doesn't re-request
+a certificate and risk Let's Encrypt's rate limits.
