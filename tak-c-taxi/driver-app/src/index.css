@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+/* Brand tokens sampled from the real logo/mockups (see tak-c-taxi/assets/logo.png
+   and the shared design board) — cream background, charcoal ink, taxi-headlight
+   yellow accent. Kept as CSS vars (not just Tailwind config) so non-Tailwind
+   contexts (MapLibre popups, etc.) can reference them too. */
+:root {
+  --color-cream: #efe8d8;
+  --color-cream-soft: #f7f3e9;
+  --color-ink: #1f1f1f;
+  --color-ink-soft: #4a4a4a;
+  --color-yellow: #f5c518;
+  --color-border: #e0d8c4;
+}
+
+@theme {
+  --color-cream: var(--color-cream);
+  --color-cream-soft: var(--color-cream-soft);
+  --color-ink: var(--color-ink);
+  --color-ink-soft: var(--color-ink-soft);
+  --color-yellow: var(--color-yellow);
+  --color-border: var(--color-border);
+  --font-sans: "Cairo", "Tahoma", -apple-system, "Segoe UI", sans-serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-cream);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  overscroll-behavior: none;
+}
+
+/* MapLibre ships its own CSS; this keeps its attribution control legible
+   against our light basemap without fighting its !important rules. */
+.maplibregl-ctrl-attrib {
+  font-size: 10px;
+}
