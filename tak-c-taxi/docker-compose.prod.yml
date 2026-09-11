@@ -52,10 +52,13 @@ services:
   # easily fits this box). ./osrm-data holds the combined.osrm* files
   # (deployed straight to the server, not committed — see the top-level
   # comment's "not in this repo" note below). Nominatim (GEOCODER_URL,
-  # address-search/autocomplete) is the one still deferred: unlike this,
-  # it's a full second Postgres-backed search index and genuinely doesn't
-  # fit alongside everything else on 1GB RAM — see the api service's
-  # GEOCODER_URL comment.
+  # address-search) doesn't get the same treatment — self-hosting it is a
+  # full second Postgres-backed search index that genuinely doesn't fit
+  # alongside everything else on 1GB RAM — so the api service instead
+  # points GEOCODER_URL at the public nominatim.openstreetmap.org; see
+  # README's "Address search via public Nominatim" section for how that's
+  # kept usage-policy-compliant (rate limiting + caching in the client
+  # code, not just at this compose-file level).
   osrm:
     image: osrm/osrm-backend
     command: osrm-routed --algorithm mld /data/combined.osrm
@@ -71,11 +74,15 @@ services:
       - "3000:3000"
     environment:
       # NODE_ENV stays "development", not "production" — genuinely true
-      # right now, not a shortcut: GEOCODER_URL (Nominatim, address-search)
-      # still isn't configured (see the osrm service's comment on why), and
-      # src/config/env.ts *refuses to start* under NODE_ENV=production
-      # without it, on purpose. ROUTING_ENGINE_URL below is real now
-      # though — /rides/quote (the actual fare/route flow) works.
+      # right now, but for a different reason than it used to be: every
+      # src/config/env.ts production requirement is actually satisfied at
+      # this point (EMAIL_*, ROUTING_ENGINE_URL, GEOCODER_URL, VAPID_* all
+      # set below). The real blocker now is auth/routes.ts's cookies —
+      # `secure: NODE_ENV === "production"` — and this deployment is still
+      # bare HTTP (no domain/TLS yet, see README's "Not done yet"). A
+      # Secure cookie over plain HTTP gets silently dropped by browsers,
+      # which would break login entirely. Flip this the moment HTTPS is
+      # in front of this box, not before.
       NODE_ENV: development
       DATABASE_URL: postgresql://tak_c_taxi:${POSTGRES_PASSWORD}@postgres:5432/tak_c_taxi
       REDIS_URL: redis://redis:6379
@@ -87,7 +94,8 @@ services:
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
       VAPID_SUBJECT: ${VAPID_SUBJECT}
       ROUTING_ENGINE_URL: http://osrm:5000
-      # GEOCODER_URL / GOOGLE_OAUTH_* intentionally unset — see above.
+      GEOCODER_URL: ${GEOCODER_URL}
+      # GOOGLE_OAUTH_* intentionally unset — that flow isn't exercised yet.
     depends_on:
       postgres:
         condition: service_healthy
