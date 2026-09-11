@@ -23,8 +23,18 @@
 // phase 1 schema.
 
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider             = "prisma-client"
+  output               = "../src/generated/prisma"
+  // Pinned, not left on their "inferred from environment" defaults: that
+  // inference depends on the exact Node.js patch version running `prisma
+  // generate`, which caused a real bug — the same schema, same Prisma
+  // version, produced ".js"-extension internal imports in one environment
+  // and ".ts"-extension ones in another (a newer Node patch's native
+  // TypeScript support changed what got inferred), and since tsc copies
+  // import specifiers verbatim (doesn't rewrite them), the ".ts" version
+  // broke at runtime under plain `node dist/index.js` with no such file.
+  moduleFormat         = "esm"
+  importFileExtension  = "js"
 }
 
 datasource db {
