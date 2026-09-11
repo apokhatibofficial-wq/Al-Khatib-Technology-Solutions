@@ -1,0 +1,87 @@
+# Real deployment topology (currently: GCP free-tier e2-micro, see README.md's
+# "Deployment" section). Differs from docker-compose.yml (local dev) in three
+# ways: secrets come from a real .env.production file (never committed — see
+# .gitignore's ".env*" rule) instead of the hardcoded dev placeholders,
+# postgres/redis are not published to the host at all (only the api container
+# can reach them, over the compose-internal network), and everything restarts
+# automatically on crash or VM reboot.
+#
+# Usage on the server:
+#   docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: tak_c_taxi
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: tak_c_taxi
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgis-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tak_c_taxi -d tak_c_taxi"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: .
+      target: migrate
+    environment:
+      DATABASE_URL: postgresql://tak_c_taxi:${POSTGRES_PASSWORD}@postgres:5432/tak_c_taxi
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      target: runtime
+    ports:
+      - "3000:3000"
+    environment:
+      # NODE_ENV is deliberately "development", not "production" — genuinely
+      # true right now, not a shortcut: this e2-micro free-tier box has no
+      # room for OSRM + Nominatim alongside Postgres/Redis/the API (see
+      # README's OSRM section), so ROUTING_ENGINE_URL/GEOCODER_URL/VAPID_*
+      # aren't fully wired up yet. src/config/env.ts *refuses to start*
+      # under NODE_ENV=production without them, on purpose (fares must come
+      # from a real route, never an estimate) — that check exists to catch
+      # exactly this kind of gap, so it isn't something to route around.
+      # Flip this once OSRM/Nominatim get their own resources (paid tier,
+      # per the 3-month plan) and /rides/quote stops needing to 503.
+      NODE_ENV: development
+      DATABASE_URL: postgresql://tak_c_taxi:${POSTGRES_PASSWORD}@postgres:5432/tak_c_taxi
+      REDIS_URL: redis://redis:6379
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      EMAIL_PROVIDER_KEY: ${EMAIL_PROVIDER_KEY}
+      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
+      VAPID_SUBJECT: ${VAPID_SUBJECT}
+      # ROUTING_ENGINE_URL / GEOCODER_URL / GOOGLE_OAUTH_* intentionally
+      # unset — see the NODE_ENV comment above.
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
