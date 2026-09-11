@@ -2,7 +2,10 @@ name: tak-c-taxi CI
 
 on:
   push:
-    branches: [main]
+    # This repo's default branch is claude/idlib-platform-pwa-ehaa06, not
+    # main (no "main" branch exists here) — confirmed via the GitHub API
+    # while setting this up, not assumed.
+    branches: [claude/idlib-platform-pwa-ehaa06]
     paths: ["tak-c-taxi/**"]
   pull_request:
     paths: ["tak-c-taxi/**"]
