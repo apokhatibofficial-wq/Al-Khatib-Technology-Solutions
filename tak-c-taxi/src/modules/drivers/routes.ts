@@ -1,7 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../../db/client.js";
-import { requireAuth } from "../auth/guard.js";
+import { requireAuth, requireDriver } from "../auth/guard.js";
+import { ACTIVE_RIDE_STATES } from "../rides/state-machine.js";
 
 const applySchema = z.object({
   age: z.number().int().min(18).max(100),
@@ -68,5 +69,18 @@ export async function registerDriverRoutes(app: FastifyInstance): Promise<void> 
       ratingCount: driver.ratingCount,
       vehicle: driver.vehicles[0] ?? null,
     });
+  });
+
+  // Without this, reopening the app mid-trip (a reload, a crashed tab, the
+  // OS killing the page in the background) strands the driver on the
+  // online-toggle home screen with no way back into their in-progress
+  // ride — nothing else exposes "the ride I'm currently on."
+  app.get("/driver/current-ride", { preHandler: requireDriver }, async (request, reply) => {
+    const ride = await prisma.ride.findFirst({
+      where: { driverId: request.driver!.id, state: { in: [...ACTIVE_RIDE_STATES] } },
+      orderBy: { requestedAt: "desc" },
+    });
+    if (!ride) return reply.code(404).send({ error: "No active ride" });
+    return reply.send(ride);
   });
 }
