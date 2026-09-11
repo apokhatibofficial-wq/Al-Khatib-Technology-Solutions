@@ -25,10 +25,10 @@ export async function sendOtpEmail(toEmail: string, code: string): Promise<void>
       from: env.EMAIL_FROM_ADDRESS,
       to: [toEmail],
       subject: `🚕 كودك: ${code}`,
-      text: `هاي! 👋\n\nكود الدخول لتطبيق Tak-C.taxi هو: ${code}\n\nبينتهي بعد 5 دقايق، خليك سريع ⏱️\n\nما طلبت هالكود؟ تجاهل الإيميل، ما في داعي تعمل أي شي.`,
+      text: `السلام عليكم 👋\n\nهادا كودك يا غالي: ${code}\n\nبينتهي بعد 5 دقايق، خليك سريع ⏱️\n\nما طلبت هالكود؟ تجاهل الإيميل، ما في داعي تعمل أي شي.`,
       html: `<div dir="rtl" style="font-family: -apple-system, 'Segoe UI', Tahoma, Arial, sans-serif; max-width: 420px; margin: 0 auto; padding: 24px; color: #1a1a1a;">
-        <p style="font-size: 16px;">هاي! 👋</p>
-        <p style="font-size: 16px;">كود الدخول لتطبيق <strong>Tak-C.taxi</strong> هو:</p>
+        <p style="font-size: 16px;">السلام عليكم 👋</p>
+        <p style="font-size: 16px;">هادا كودك يا غالي:</p>
         <div style="background: #f4f4f5; border-radius: 12px; padding: 16px; text-align: center; margin: 16px 0;">
           <span style="font-size: 32px; font-weight: 700; letter-spacing: 4px;">${code}</span>
         </div>
