@@ -919,5 +919,47 @@ http://<external-ip>:3000/health`) got the same `{"status":"ok",...}`
 response shown above.
 
 **Not done yet**: HTTPS/a real domain (still the bare `http://<external-ip>:3000`
-this section's curl output uses), Nominatim/`GEOCODER_URL`, S3 for driver
-documents.
+this section's curl output uses), S3 for driver documents.
+
+### Address search via public Nominatim (post-phase-9)
+
+`GEOCODER_URL` is real too now — not self-hosted (still doesn't fit this
+box's RAM), but pointed at the public `nominatim.openstreetmap.org`. That
+service's [usage policy](https://operations.osmfoundation.org/policies/nominatim/)
+is a real, enforced constraint, not a suggestion: an absolute ~1 request/
+second ceiling that applies to this backend's *aggregate* traffic across
+every end-user (not per-user), a required descriptive User-Agent, no
+auto-complete-on-keystroke, and an expectation that results get cached
+locally rather than re-fetched. `src/modules/geo/nominatim.ts` enforces
+the first and last of those unconditionally (a serialized in-process
+queue spacing real outbound requests ≥1.1s apart, and a Redis cache with
+a 24-hour TTL keyed by normalized query / rounded lat-lng) — the
+auto-complete rule is a frontend responsibility (search on submit, not
+per keystroke) that this backend can't itself enforce, only document.
+
+Verified for real against the actual public service, through the real
+code path (throttle + cache included, not bypassed for the test):
+
+```
+=== call 1, "الدانا, ادلب" (real network hit) ===
+took 641ms — { lat: 36.2135713, lng: 36.7704347, label: "الدانا, ناحية الدانا, ... محافظة إدلب, سوريا" }
+
+=== call 2, same query (cache hit) ===
+took 0ms — identical result, no network call
+
+=== call 3, "سرمدا, ادلب" (different query, right after) ===
+took 765ms — { lat: 36.2014255, lng: 36.7119201, label: "سرمدا, M45, Bab al-Hawa, ... محافظة إدلب, سوريا" }
+```
+
+Both results land on the exact same real coordinates this document's
+other sections already used for Dana and Sarmada (originally obtained
+from this same public Nominatim, back when building the OSRM extract) —
+confirming the geocoder and the router agree on where these places
+actually are. The gap between call 1's and call 3's actual outbound
+requests measured exactly the throttle's configured 1.1s floor, even
+though call 2's cache hit (0ms, no request at all) sat in between.
+
+Self-hosting Nominatim remains the real fix once traffic grows past what
+a single free-tier box + the public instance's shared rate limit can
+reasonably support — same "upgrade once paid hosting exists" plan as
+OSRM's own from-source build vs. this box's tight RAM.
