@@ -96,6 +96,7 @@ services:
       VAPID_SUBJECT: ${VAPID_SUBJECT}
       ROUTING_ENGINE_URL: http://osrm:5000
       GEOCODER_URL: ${GEOCODER_URL}
+      CORS_ORIGINS: ${CORS_ORIGINS}
       # GOOGLE_OAUTH_* intentionally unset — that flow isn't exercised yet.
     depends_on:
       postgres:
