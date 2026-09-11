@@ -31,40 +31,40 @@ after(async () => {
 // too, but calling the real functions directly with a capturing Logger is
 // simpler and no less real; the HTTP route is a thin wrapper over these.
 test("otp: request then verify with the right code succeeds", async () => {
-  const phone = "+963900000001";
+  const email = "otp-test-1@example.com";
   let capturedCode: string | undefined;
-  await requestOtp(phone, { info: (obj: unknown) => (capturedCode = (obj as { code: string }).code) });
+  await requestOtp(email, { info: (obj: unknown) => (capturedCode = (obj as { code: string }).code) });
   assert.ok(capturedCode, "expected requestOtp to log a code in dev mode");
 
-  const ok = await verifyOtp(phone, capturedCode!);
+  const ok = await verifyOtp(email, capturedCode!);
   assert.equal(ok, true);
 });
 
 test("otp: wrong code fails and does not consume the pending request", async () => {
-  const phone = "+963900000002";
+  const email = "otp-test-2@example.com";
   let capturedCode: string | undefined;
-  await requestOtp(phone, { info: (obj: unknown) => (capturedCode = (obj as { code: string }).code) });
+  await requestOtp(email, { info: (obj: unknown) => (capturedCode = (obj as { code: string }).code) });
 
   const wrongCode = capturedCode === "000000" ? "111111" : "000000";
-  const first = await verifyOtp(phone, wrongCode);
+  const first = await verifyOtp(email, wrongCode);
   assert.equal(first, false);
 
-  const second = await verifyOtp(phone, capturedCode!);
+  const second = await verifyOtp(email, capturedCode!);
   assert.equal(second, true, "the real code should still work after one wrong attempt");
 });
 
 test("otp: a code cannot be replayed after successful verification", async () => {
-  const phone = "+963900000003";
+  const email = "otp-test-3@example.com";
   let capturedCode: string | undefined;
-  await requestOtp(phone, { info: (obj: unknown) => (capturedCode = (obj as { code: string }).code) });
-  assert.equal(await verifyOtp(phone, capturedCode!), true);
-  assert.equal(await verifyOtp(phone, capturedCode!), false, "the same code must not verify twice");
+  await requestOtp(email, { info: (obj: unknown) => (capturedCode = (obj as { code: string }).code) });
+  assert.equal(await verifyOtp(email, capturedCode!), true);
+  assert.equal(await verifyOtp(email, capturedCode!), false, "the same code must not verify twice");
 });
 
 test("otp: requesting a second code before the cooldown elapses is rate-limited", async () => {
-  const phone = "+963900000004";
-  await requestOtp(phone, { info: () => {} });
-  await assert.rejects(() => requestOtp(phone, { info: () => {} }), OtpRateLimitError);
+  const email = "otp-test-4@example.com";
+  await requestOtp(email, { info: () => {} });
+  await assert.rejects(() => requestOtp(email, { info: () => {} }), OtpRateLimitError);
 });
 
 // ---- HTTP-level auth guard ------------------------------------------------

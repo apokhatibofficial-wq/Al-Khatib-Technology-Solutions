@@ -57,6 +57,14 @@ actually building them was deliberately avoided, and still is.
 
 ## What's built (Phase 2 — auth & sessions)
 
+> **Superseded, phase 9 follow-up**: this section describes the original
+> phone+SMS design as built. OTP delivery (and the login identity itself)
+> was switched to email after phase 9 — see "OTP switched from SMS to
+> email" further down for the current behavior. Left as-is here rather than
+> rewritten, for the same reason every other phase's section stays as
+> written: it's an accurate record of what was built and verified at the
+> time, not a living spec.
+
 `src/modules/auth/` — endpoints exactly matching §4's auth list (`POST
 /auth/otp/request`, `/auth/otp/verify`, `/auth/google`, `/auth/refresh`,
 `/auth/logout`, `GET /me`), plus one the doc's role model requires but
@@ -439,7 +447,7 @@ built, not by a test failure:
   as an impossible promise, not a missing feature.
 - **General API rate limiting** (`@fastify/rate-limit`, registered in
   `server.ts`) — §10's "إساءة استخدام API" row asks for per-user/IP rate
-  limits; only `/auth/otp/*` had one (phone-keyed, in `otp.ts`). A
+  limits; only `/auth/otp/*` had one (email-keyed, in `otp.ts`). A
   Redis-backed floor (300 req/min/IP, generous enough for a driver polling
   location every 2-8s per §6) now sits under the whole API, so it holds
   across more than one server instance.
@@ -571,6 +579,54 @@ not swept past:
   Lighthouse against here.
 
 All 9 phases from the architecture document are now built.
+
+## OTP switched from SMS to email (post-phase-9)
+
+The architecture doc's §5 plan was phone number + SMS OTP. After phase 9,
+switched to email as the login identity and OTP delivery channel entirely
+(user decision) — a Syria-reachable SMS gateway is a real operational
+blocker; a transactional email API isn't.
+
+- **`User.email`** replaces `User.phone` as the unique login identity
+  (migration `20260911152307_switch_login_identity_to_email` — backfills
+  any existing dev/test rows with a `<old phone>@migrated.invalid`
+  placeholder rather than dropping them or fabricating fake-looking real
+  addresses; verified applying cleanly to both a database with existing
+  rows and a brand-new empty one). `OtpRequest.phone` → `OtpRequest.email`
+  the same way.
+- **`email.ts`** (new) — real delivery via [Resend](https://resend.com)'s
+  REST API (`POST https://api.resend.com/emails`), plain `fetch`, no SDK —
+  same style as the existing OSRM/Nominatim clients. `EMAIL_PROVIDER_KEY`
+  and `EMAIL_FROM_ADDRESS` replace `OTP_PROVIDER_KEY` in `env.ts`; same
+  optional-in-dev/required-in-production discipline as before. The request
+  shape was verified against Resend's real endpoint (a deliberately-invalid
+  key still gets back a real `401 API key is invalid` from Resend's own
+  validation, not a connection or parsing error — confirms the endpoint,
+  method, headers and JSON body are all correctly formed without needing a
+  real key to prove it).
+- **`/auth/google` got simpler, not just renamed**: the old design's
+  `no_account` dead-end ("Google can't originate an account, it has no
+  phone number to key one on") no longer applies — Google already hands
+  over a real, verified email in the same `id_token` this route already
+  parses (see `google.ts`'s `GoogleIdentity.email`/`emailVerified`, both
+  fetched before but never used until now). Google sign-in now upserts
+  (finds-or-creates) the account directly by email when Google reports it
+  verified, and links `googleSub` onto an existing email-matched account
+  the same call.
+- Every place that read/wrote `phone` was updated: `otp.ts`, `routes.ts`
+  (including `/me`), `admin/routes.ts`'s driver list projection, and the
+  test suite's fixtures/auth tests. Re-ran the full suite after: still
+  39/39 against a real database.
+
+**To actually send real OTP emails** (not just log the code in dev):
+1. Sign up at [resend.com](https://resend.com) (free tier, no card).
+2. Get an API key from the dashboard's *API Keys* page → `EMAIL_PROVIDER_KEY`.
+3. Set `EMAIL_FROM_ADDRESS=onboarding@resend.dev` to start sending
+   immediately with zero extra setup, **or** verify the project's own
+   domain (`tak-c.taxi`) in Resend's *Domains* page — it gives exact
+   SPF/DKIM DNS records to add at the domain's registrar (GoDaddy, already
+   owned per "Deployment" below) for real production sending from
+   `otp@tak-c.taxi`-style addresses instead of Resend's shared domain.
 
 ## Getting started (local development)
 
@@ -724,9 +780,11 @@ real GitHub Actions runner from here — same reasoning as the Docker note.)
 ### DNS / hosting
 
 Domain is already purchased (GoDaddy) — only DNS records need to change,
-once there's a real server to point them at (see "Is this ready to
-deploy?" — this backend still needs a real SMS/OTP provider, a self-hosted
-routing/geocoding engine, and object storage before that's true):
+once there's a real server to point them at. This backend still needs a
+real email provider configured for OTP delivery (see "OTP switched from
+SMS to email" above — Resend, easy to set up today), a self-hosted
+routing/geocoding engine actually deployed, and object storage, before
+that's true:
 
 | Subdomain | Service |
 | --- | --- |

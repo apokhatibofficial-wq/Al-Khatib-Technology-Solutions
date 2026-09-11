@@ -11,13 +11,13 @@ export interface GeoPoint {
   lng: number;
 }
 
-let phoneCounter = 0;
+let emailCounter = 0;
 
-/** Unique, E.164-valid (+963 + 9 digits) phone number per call — avoids the User.phone unique constraint colliding across tests. */
-export function uniquePhone(): string {
-  phoneCounter += 1;
-  const suffix = (Date.now() % 1_000_000).toString().padStart(6, "0") + phoneCounter.toString().padStart(3, "0");
-  return `+963${suffix}`;
+/** Unique email per call — avoids the User.email unique constraint colliding across tests. */
+export function uniqueEmail(): string {
+  emailCounter += 1;
+  const suffix = (Date.now() % 1_000_000).toString().padStart(6, "0") + emailCounter.toString().padStart(3, "0");
+  return `test-${suffix}@example.com`;
 }
 
 const DEFAULT_BBOX = { minLng: 36.0, minLat: 35.5, maxLng: 37.1, maxLat: 36.4 };
@@ -73,11 +73,11 @@ export async function createPricingVersion(cityId: string, overrides: PricingOve
 }
 
 export async function createRiderUser(cityId?: string) {
-  return prisma.user.create({ data: { phone: uniquePhone(), status: "ACTIVE", cityId } });
+  return prisma.user.create({ data: { email: uniqueEmail(), status: "ACTIVE", cityId } });
 }
 
 export async function createDriverWithUser(cityId?: string) {
-  const user = await prisma.user.create({ data: { phone: uniquePhone(), status: "ACTIVE", cityId } });
+  const user = await prisma.user.create({ data: { email: uniqueEmail(), status: "ACTIVE", cityId } });
   const driver = await prisma.driver.create({ data: { userId: user.id, age: 30, status: "APPROVED" } });
   return { user, driver };
 }

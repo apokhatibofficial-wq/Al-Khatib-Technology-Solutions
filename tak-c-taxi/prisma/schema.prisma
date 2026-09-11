@@ -171,10 +171,13 @@ model Quote {
 model User {
   id        String     @id @default(cuid())
   /// Null until the post-OTP-verify profile-completion step (not yet built)
-  /// runs — a brand-new phone number has no name on file at verify time.
+  /// runs — a brand-new account has no name on file at verify time.
   fullName  String?
-  /// E.164 format (e.g. +9639XXXXXXXX). The OTP auth path (§5) keys off this.
-  phone     String     @unique
+  /// Always stored lowercased (see auth/otp.ts) — login identity. Originally
+  /// phone+SMS per the architecture doc's §5; switched to email (user
+  /// decision, phase 9 follow-up) since a Syria-reachable SMS gateway is a
+  /// real operational blocker an email provider isn't.
+  email     String     @unique
   gender    String?
   status    UserStatus @default(PENDING)
   /// Present only for accounts linked via Google OAuth (§5); OTP-only users
@@ -291,17 +294,17 @@ model Session {
 
 /// One row per OTP send (§5 OTP path, §10 "OTP بحد محاولات"). codeHash is an
 /// HMAC, not a reversible encoding — the raw code only ever exists in the
-/// SMS itself and briefly in memory on this server while sending it.
+/// email itself and briefly in memory on this server while sending it.
 model OtpRequest {
   id         String    @id @default(cuid())
-  phone      String
+  email      String
   codeHash   String
   expiresAt  DateTime
   attempts   Int       @default(0)
   consumedAt DateTime?
   createdAt  DateTime  @default(now())
 
-  @@index([phone, createdAt])
+  @@index([email, createdAt])
 }
 
 // ---------------------------------------------------------------------------

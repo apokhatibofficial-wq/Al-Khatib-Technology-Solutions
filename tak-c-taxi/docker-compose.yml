@@ -56,8 +56,8 @@ services:
       REDIS_URL: redis://redis:6379
       JWT_ACCESS_SECRET: dev-only-access-secret-not-for-production-use-32chars-min
       JWT_REFRESH_SECRET: dev-only-refresh-secret-not-for-production-use-32chars-min
-      # ROUTING_ENGINE_URL / GEOCODER_URL / VAPID_* / OTP_PROVIDER_KEY /
-      # GOOGLE_OAUTH_* intentionally left unset here — see .env.example for
+      # ROUTING_ENGINE_URL / GEOCODER_URL / VAPID_* / EMAIL_PROVIDER_KEY /
+      # EMAIL_FROM_ADDRESS / GOOGLE_OAUTH_* intentionally left unset here — see .env.example for
       # what each one enables; the server degrades gracefully without them
       # in a non-production NODE_ENV (a 503 on the routes that need them).
     depends_on:

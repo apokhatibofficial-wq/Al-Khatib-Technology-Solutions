@@ -60,7 +60,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     if (!q.success) return reply.code(400).send({ error: q.error.issues[0]?.message });
     const drivers = await prisma.driver.findMany({
       where: q.data.status ? { status: q.data.status } : {},
-      include: { user: { select: { fullName: true, phone: true } }, vehicles: true },
+      include: { user: { select: { fullName: true, email: true } }, vehicles: true },
       orderBy: { createdAt: "desc" },
       take: q.data.limit,
       skip: q.data.offset,

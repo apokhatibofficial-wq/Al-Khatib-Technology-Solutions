@@ -13,9 +13,13 @@ const envSchema = z.object({
   JWT_ACCESS_SECRET: z.string().min(32, "JWT_ACCESS_SECRET must be at least 32 characters"),
   JWT_REFRESH_SECRET: z.string().min(32, "JWT_REFRESH_SECRET must be at least 32 characters"),
 
-  // OTP delivery. No real SMS vendor is wired yet — see src/modules/auth/otp.ts.
-  // Optional in development (falls back to logging the code); required in production.
-  OTP_PROVIDER_KEY: z.string().optional(),
+  // OTP delivery via email (Resend — see src/modules/auth/email.ts). Switched
+  // from the architecture doc's original §5 SMS plan: a Syria-reachable SMS
+  // gateway is a real operational blocker, an email provider isn't (user
+  // decision, phase 9 follow-up). Optional in development (falls back to
+  // logging the code); both required in production.
+  EMAIL_PROVIDER_KEY: z.string().optional(),
+  EMAIL_FROM_ADDRESS: z.string().optional(),
 
   // Google OAuth (§5, secondary auth path). Optional until that flow is exercised.
   GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
@@ -51,9 +55,9 @@ const envSchema = z.object({
 
 export const env = envSchema.parse(process.env);
 
-if (env.NODE_ENV === "production" && !env.OTP_PROVIDER_KEY) {
+if (env.NODE_ENV === "production" && (!env.EMAIL_PROVIDER_KEY || !env.EMAIL_FROM_ADDRESS)) {
   throw new Error(
-    "OTP_PROVIDER_KEY is required in production — refusing to start with OTP delivery silently disabled.",
+    "EMAIL_PROVIDER_KEY and EMAIL_FROM_ADDRESS are required in production — refusing to start with OTP delivery silently disabled.",
   );
 }
 if (env.NODE_ENV === "production" && (!env.ROUTING_ENGINE_URL || !env.GEOCODER_URL)) {

@@ -8,7 +8,10 @@ import { signMfaTicket, verifyMfaTicket } from "./jwt.js";
 import { createSession, rotateSession, revokeByRefreshToken, ReuseDetectedError, type SessionMeta } from "./sessions.js";
 import { requireAuth } from "./guard.js";
 
-const phoneSchema = z.string().regex(/^\+[1-9]\d{6,14}$/, "Expected E.164 format, e.g. +963900000000");
+const emailSchema = z
+  .string()
+  .email("Expected a valid email address")
+  .transform((s) => s.trim().toLowerCase());
 const otpCodeSchema = z.string().regex(/^\d{6}$/, "Expected a 6-digit code");
 
 const REFRESH_COOKIE = "refresh_token";
@@ -19,11 +22,11 @@ function sessionMeta(request: { headers: { "user-agent"?: string }; ip: string }
 
 export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
   app.post("/auth/otp/request", async (request, reply) => {
-    const body = z.object({ phone: phoneSchema }).safeParse(request.body);
+    const body = z.object({ email: emailSchema }).safeParse(request.body);
     if (!body.success) return reply.code(400).send({ error: body.error.issues[0]?.message });
 
     try {
-      await requestOtp(body.data.phone, request.log);
+      await requestOtp(body.data.email, request.log);
     } catch (err) {
       if (err instanceof OtpRateLimitError) return reply.code(429).send({ error: err.message });
       throw err;
@@ -32,16 +35,16 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post("/auth/otp/verify", async (request, reply) => {
-    const body = z.object({ phone: phoneSchema, code: otpCodeSchema }).safeParse(request.body);
+    const body = z.object({ email: emailSchema, code: otpCodeSchema }).safeParse(request.body);
     if (!body.success) return reply.code(400).send({ error: body.error.issues[0]?.message });
 
-    const ok = await verifyOtp(body.data.phone, body.data.code);
+    const ok = await verifyOtp(body.data.email, body.data.code);
     if (!ok) return reply.code(401).send({ error: "Invalid or expired code" });
 
     const user = await prisma.user.upsert({
-      where: { phone: body.data.phone },
+      where: { email: body.data.email },
       update: {},
-      create: { phone: body.data.phone, status: "PENDING" },
+      create: { email: body.data.email, status: "PENDING" },
     });
 
     const tokens = await createSession("user", user.id, undefined, sessionMeta(request));
@@ -68,9 +71,11 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(401).send({ error: "Google sign-in failed" });
     }
 
-    // Admin identity is anchored on email (admin_users has no phone/googleSub
+    const email = identity.email.trim().toLowerCase();
+
+    // Admin identity is anchored on email (admin_users has no googleSub
     // column — §3) and mandatory MFA (§10) always gates the actual session.
-    const admin = await prisma.adminUser.findUnique({ where: { email: identity.email } });
+    const admin = await prisma.adminUser.findUnique({ where: { email } });
     if (admin) {
       if (!admin.mfaSecret) {
         return reply.code(403).send({ error: "MFA is not configured for this admin account yet." });
@@ -79,16 +84,20 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       return reply.send({ mfaRequired: true, ticket });
     }
 
-    // Regular users are phone-anchored (§5: OTP is the primary path). Google
-    // only ever logs in an account that already exists by googleSub — it
-    // can't originate a new, phone-less account.
-    const user = await prisma.user.findUnique({ where: { googleSub: identity.googleSub } });
-    if (!user) {
-      return reply.code(404).send({
-        error: "no_account",
-        message: "No account is linked to this Google identity yet. Verify your phone number first.",
-      });
+    if (!identity.emailVerified) {
+      return reply.code(401).send({ error: "Google did not report this email address as verified." });
     }
+
+    // Regular users are email-anchored (§5, switched from phone — see
+    // prisma/schema.prisma's User.email note). Google's own verified email
+    // is enough to find-or-create the account directly here — unlike the
+    // old phone-anchored design, Google sign-in no longer needs a prior OTP
+    // signup to "link" against; it can originate the account itself.
+    const user = await prisma.user.upsert({
+      where: { email },
+      update: { googleSub: identity.googleSub },
+      create: { email, googleSub: identity.googleSub, fullName: identity.fullName, status: "PENDING" },
+    });
 
     const tokens = await createSession("user", user.id, undefined, sessionMeta(request));
     reply.setCookie(REFRESH_COOKIE, tokens.refreshToken, {
@@ -175,7 +184,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       actorType: "user",
       id: user.id,
       fullName: user.fullName,
-      phone: user.phone,
+      email: user.email,
       status: user.status,
       driver: user.driver ? { status: user.driver.status, isOnline: user.driver.isOnline } : null,
     });

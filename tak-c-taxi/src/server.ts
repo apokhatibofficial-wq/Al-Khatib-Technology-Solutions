@@ -49,7 +49,7 @@ export async function buildServer() {
   // dependency, so limits hold across more than one server instance).
   // Not specified numerically by the doc — a documented default, generous
   // enough for a driver polling location every 2-8s (§6) without ever
-  // being the bottleneck. /auth/otp/* has its own, tighter, phone-keyed
+  // being the bottleneck. /auth/otp/* has its own, tighter, email-keyed
   // limit (otp.ts) — this is the general floor everything else sits on.
   await app.register(rateLimit, {
     global: true,
