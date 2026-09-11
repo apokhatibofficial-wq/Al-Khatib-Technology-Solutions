@@ -1,0 +1,3 @@
+api.tak-c.taxi {
+	reverse_proxy api:3000
+}

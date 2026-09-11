@@ -71,19 +71,20 @@ services:
       context: .
       target: runtime
     ports:
+      # Kept published during the HTTPS cutover (see the caddy service
+      # below) as a fallback while that's being verified — remove this
+      # once api.tak-c.taxi/health is confirmed solid over HTTPS, so the
+      # raw origin isn't reachable in parallel with the TLS-terminating
+      # proxy in front of it.
       - "3000:3000"
     environment:
-      # NODE_ENV stays "development", not "production" — genuinely true
-      # right now, but for a different reason than it used to be: every
-      # src/config/env.ts production requirement is actually satisfied at
-      # this point (EMAIL_*, ROUTING_ENGINE_URL, GEOCODER_URL, VAPID_* all
-      # set below). The real blocker now is auth/routes.ts's cookies —
-      # `secure: NODE_ENV === "production"` — and this deployment is still
-      # bare HTTP (no domain/TLS yet, see README's "Not done yet"). A
-      # Secure cookie over plain HTTP gets silently dropped by browsers,
-      # which would break login entirely. Flip this the moment HTTPS is
-      # in front of this box, not before.
-      NODE_ENV: development
+      # NODE_ENV is "production" now — every env.ts requirement is
+      # satisfied (EMAIL_*, ROUTING_ENGINE_URL, GEOCODER_URL, VAPID_* all
+      # set below), and the one remaining blocker (auth/routes.ts's
+      # `secure: NODE_ENV === "production"` cookie flag needing real
+      # HTTPS in front of this box, or browsers silently drop the cookie
+      # and break login) is resolved by the caddy service below.
+      NODE_ENV: production
       DATABASE_URL: postgresql://tak_c_taxi:${POSTGRES_PASSWORD}@postgres:5432/tak_c_taxi
       REDIS_URL: redis://redis:6379
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
@@ -107,8 +108,29 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  # Real HTTPS, not a self-signed cert: Caddy requests and auto-renews a
+  # real Let's Encrypt certificate for api.tak-c.taxi (DNS A record ->
+  # this box's external IP, set up manually in GoDaddy — Caddy just needs
+  # that to already resolve) and reverse-proxies to the api container.
+  # caddy-data persists the certificate/account state across restarts so
+  # it isn't re-issued (and rate-limited by Let's Encrypt) on every deploy.
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - api
+    restart: unless-stopped
+
 volumes:
   postgres-data:
+  caddy-data:
+  caddy-config:
 
 # Note: ./osrm-data (the combined.osrm* files the osrm service mounts) is
 # deployed directly to the server alongside this file, not committed to
