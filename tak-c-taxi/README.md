@@ -911,12 +911,13 @@ extensions depending on the exact Node.js patch version running `prisma
 generate`, which differed between the sandbox this was developed in and
 the `node:22-bookworm-slim` image actually pulled on the VM.
 
+Public reachability confirmed independently too — this project's own
+development sandbox can't test it (its egress proxy can't reach arbitrary
+external IPs/ports, only the standard package/API hosts it allowlists),
+but a real request from a real outside device/network (`GET
+http://<external-ip>:3000/health`) got the same `{"status":"ok",...}`
+response shown above.
+
 **Not done yet**: HTTPS/a real domain (still the bare `http://<external-ip>:3000`
 this section's curl output uses), Nominatim/`GEOCODER_URL`, S3 for driver
-documents. The e2-micro's own outbound reachability from arbitrary
-external networks hasn't been self-tested from this project's own
-development sandbox — that sandbox's egress proxy can't reach arbitrary
-external IPs/ports, only the standard package/API hosts it allowlists —
-so treat "reachable from the public internet on port 3000" as configured
-(a firewall rule opening `tcp:3000` from `0.0.0.0/0` exists) but not
-independently confirmed from outside GCP's own network.
+documents.
