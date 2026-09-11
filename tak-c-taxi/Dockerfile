@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-cert
 # tsc below, not a prebuilt bundle — see src/generated/prisma/), compiles. ----
 FROM base AS build
 COPY package.json package-lock.json ./
+COPY prisma.config.ts ./
 COPY prisma ./prisma
 RUN npm ci
 COPY tsconfig.json ./
