@@ -45,6 +45,24 @@ services:
         condition: service_healthy
     restart: "no"
 
+  # Real routing, not a stub: serves the actual Idlib/Dana/Sarmada OSRM
+  # extract built and verified in README.md's "OSRM verified with real
+  # Idlib/Dana/Sarmada data" section (~3.2MB total — tiny, because it's
+  # deliberately scoped to just those areas, not all of Idlib province —
+  # easily fits this box). ./osrm-data holds the combined.osrm* files
+  # (deployed straight to the server, not committed — see the top-level
+  # comment's "not in this repo" note below). Nominatim (GEOCODER_URL,
+  # address-search/autocomplete) is the one still deferred: unlike this,
+  # it's a full second Postgres-backed search index and genuinely doesn't
+  # fit alongside everything else on 1GB RAM — see the api service's
+  # GEOCODER_URL comment.
+  osrm:
+    image: osrm/osrm-backend
+    command: osrm-routed --algorithm mld /data/combined.osrm
+    volumes:
+      - ./osrm-data:/data:ro
+    restart: unless-stopped
+
   api:
     build:
       context: .
@@ -52,16 +70,12 @@ services:
     ports:
       - "3000:3000"
     environment:
-      # NODE_ENV is deliberately "development", not "production" — genuinely
-      # true right now, not a shortcut: this e2-micro free-tier box has no
-      # room for OSRM + Nominatim alongside Postgres/Redis/the API (see
-      # README's OSRM section), so ROUTING_ENGINE_URL/GEOCODER_URL/VAPID_*
-      # aren't fully wired up yet. src/config/env.ts *refuses to start*
-      # under NODE_ENV=production without them, on purpose (fares must come
-      # from a real route, never an estimate) — that check exists to catch
-      # exactly this kind of gap, so it isn't something to route around.
-      # Flip this once OSRM/Nominatim get their own resources (paid tier,
-      # per the 3-month plan) and /rides/quote stops needing to 503.
+      # NODE_ENV stays "development", not "production" — genuinely true
+      # right now, not a shortcut: GEOCODER_URL (Nominatim, address-search)
+      # still isn't configured (see the osrm service's comment on why), and
+      # src/config/env.ts *refuses to start* under NODE_ENV=production
+      # without it, on purpose. ROUTING_ENGINE_URL below is real now
+      # though — /rides/quote (the actual fare/route flow) works.
       NODE_ENV: development
       DATABASE_URL: postgresql://tak_c_taxi:${POSTGRES_PASSWORD}@postgres:5432/tak_c_taxi
       REDIS_URL: redis://redis:6379
@@ -72,8 +86,8 @@ services:
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
       VAPID_SUBJECT: ${VAPID_SUBJECT}
-      # ROUTING_ENGINE_URL / GEOCODER_URL / GOOGLE_OAUTH_* intentionally
-      # unset — see the NODE_ENV comment above.
+      ROUTING_ENGINE_URL: http://osrm:5000
+      # GEOCODER_URL / GOOGLE_OAUTH_* intentionally unset — see above.
     depends_on:
       postgres:
         condition: service_healthy
@@ -81,7 +95,14 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      osrm:
+        condition: service_started
     restart: unless-stopped
 
 volumes:
   postgres-data:
+
+# Note: ./osrm-data (the combined.osrm* files the osrm service mounts) is
+# deployed directly to the server alongside this file, not committed to
+# git — same treatment as .env.production, since it's a generated data
+# artifact (rebuildable via scripts/setup-osrm-idlib.sh), not source.
