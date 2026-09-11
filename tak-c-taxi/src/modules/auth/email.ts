@@ -1,5 +1,22 @@
 import { env } from "../../config/env.js";
-import { LOGO_DATA_URI } from "./logo.js";
+
+// A base64 data: URI was tried first (see git history) and dropped — Gmail
+// does not reliably render inline base64 images in received HTML mail
+// (confirmed by an actual failed real-world send, not just a guess: the
+// email arrived with no logo). A real <img src> the recipient's mail
+// client fetches over HTTPS is the only approach that reliably works.
+//
+// TEMPORARY: no real asset hosting exists for this project yet (see
+// README.md's "Is this ready to deploy?"), so this points at the logo
+// file's raw GitHub URL on this working branch — genuinely public and
+// fetchable (verified with a real curl, 200 + image/png), but not a
+// real production answer: it moves if this branch is renamed/deleted,
+// and ties a transactional email to GitHub's raw-content service rather
+// than this project's own domain. Replace with a real hosted URL
+// (S3/Cloudflare/the eventual tak-c.taxi static assets) before launch.
+const LOGO_URL =
+  "https://raw.githubusercontent.com/apokhatibofficial-wq/Al-Khatib-Technology-Solutions/claude/new-session-l9w3z4/tak-c-taxi/assets/logo.png";
+const BRAND_YELLOW = "#FFE600"; // sampled directly from the logo's taxi headlights
 
 // Real transactional email via Resend's REST API (https://resend.com/docs/api-reference/emails/send-email)
 // — a plain fetch call, no SDK, matching this project's existing style for
@@ -27,20 +44,24 @@ export async function sendOtpEmail(toEmail: string, code: string): Promise<void>
       to: [toEmail],
       subject: `🚕 كودك: ${code}`,
       text: `السلام عليكم 👋\n\nهادا كودك يا غالي: ${code}\n\nبينتهي بعد 5 دقايق، خليك سريع ⏱️\n\nما طلبت هالكود؟ تجاهل الإيميل، ما في داعي تعمل أي شي.`,
-      html: `<div style="margin: 0; padding: 32px 16px; background: #f3f3f5; font-family: -apple-system, 'Segoe UI', Tahoma, Arial, sans-serif;">
-        <div dir="rtl" style="max-width: 420px; margin: 0 auto; background: #ffffff; border-radius: 16px; padding: 32px 28px; border: 1px solid #ececef;">
-          <div style="text-align: center; margin-bottom: 24px;">
-            <img src="${LOGO_DATA_URI}" alt="Tak-C.taxi" width="180" style="max-width: 180px; height: auto;" />
+      html: `<div style="margin: 0; padding: 40px 16px; background: #f3f3f5; font-family: -apple-system, 'Segoe UI', Tahoma, Arial, sans-serif;">
+        <div style="max-width: 440px; margin: 0 auto; background: #ffffff; border-radius: 20px; overflow: hidden; border: 1px solid #ececef; box-shadow: 0 2px 12px rgba(0,0,0,0.04);">
+          <div style="height: 6px; background: ${BRAND_YELLOW};"></div>
+          <div dir="rtl" style="padding: 36px 32px 32px;">
+            <div style="text-align: center; margin-bottom: 28px;">
+              <img src="${LOGO_URL}" alt="Tak-C.taxi" width="190" style="max-width: 190px; height: auto; display: inline-block;" />
+            </div>
+            <p style="font-size: 17px; color: #1a1a1a; margin: 0 0 6px;">السلام عليكم 👋</p>
+            <p style="font-size: 17px; color: #1a1a1a; margin: 0 0 20px;">هادا كودك يا غالي:</p>
+            <div style="background: #fffdf0; border: 2px solid ${BRAND_YELLOW}; border-radius: 14px; padding: 20px; text-align: center; margin: 0 0 20px;">
+              <span style="font-size: 36px; font-weight: 800; letter-spacing: 8px; color: #1a1a1a;">${code}</span>
+            </div>
+            <p style="font-size: 14px; color: #555; margin: 0 0 24px;">بينتهي بعد 5 دقايق، خليك سريع ⏱️</p>
+            <hr style="border: none; border-top: 1px solid #ececef; margin: 0 0 16px;" />
+            <p style="font-size: 12px; color: #999; margin: 0;">ما طلبت هالكود؟ تجاهل الإيميل، ما في داعي تعمل أي شي.</p>
           </div>
-          <p style="font-size: 16px; color: #1a1a1a; margin: 0 0 8px;">السلام عليكم 👋</p>
-          <p style="font-size: 16px; color: #1a1a1a; margin: 0 0 16px;">هادا كودك يا غالي:</p>
-          <div style="background: #f4f4f5; border-radius: 12px; padding: 18px; text-align: center; margin: 0 0 16px;">
-            <span style="font-size: 34px; font-weight: 700; letter-spacing: 6px; color: #1a1a1a;">${code}</span>
-          </div>
-          <p style="font-size: 14px; color: #555; margin: 0 0 20px;">بينتهي بعد 5 دقايق، خليك سريع ⏱️</p>
-          <hr style="border: none; border-top: 1px solid #ececef; margin: 0 0 16px;" />
-          <p style="font-size: 12px; color: #999; margin: 0;">ما طلبت هالكود؟ تجاهل الإيميل، ما في داعي تعمل أي شي.</p>
         </div>
+        <p style="text-align: center; font-size: 12px; color: #aaa; margin: 20px 0 0;">Tak-C.taxi</p>
       </div>`,
     }),
   });
