@@ -4,6 +4,7 @@ import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import rateLimit from "@fastify/rate-limit";
+import multipart from "@fastify/multipart";
 import { env } from "./config/env.js";
 import { prisma } from "./db/client.js";
 import { redis } from "./modules/realtime/redis.js";
@@ -15,6 +16,7 @@ import { registerRealtimeRoutes } from "./modules/realtime/websocket.js";
 import { registerAdminRoutes } from "./modules/admin/routes.js";
 import { registerNotificationRoutes } from "./modules/notifications/routes.js";
 import { registerDriverRoutes } from "./modules/drivers/routes.js";
+import { registerUploadRoutes } from "./modules/uploads/routes.js";
 
 /**
  * pino-pretty is a devDependency, deliberately absent from the pruned
@@ -49,6 +51,7 @@ export async function buildServer() {
   // never "*", per the CORS spec (see CORS_ORIGINS's comment in env.ts).
   await app.register(cors, { origin: env.CORS_ORIGINS, credentials: true });
   await app.register(websocket);
+  await app.register(multipart);
 
   // §10's "إساءة استخدام API" threat row: "حدود معدل لكل مستخدم وIP" — a
   // per-IP floor across the whole API (backed by Redis, already a hard
@@ -83,6 +86,7 @@ export async function buildServer() {
   await registerAdminRoutes(app);
   await registerNotificationRoutes(app);
   await registerDriverRoutes(app);
+  await registerUploadRoutes(app);
 
   return app;
 }

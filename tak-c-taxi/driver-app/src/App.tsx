@@ -7,6 +7,7 @@ import { Apply } from "./screens/Apply";
 import { Pending } from "./screens/Pending";
 import { Home } from "./screens/Home";
 import { ActiveRide } from "./screens/ActiveRide";
+import { Profile } from "./screens/Profile";
 import { driverMe, currentRide, type DriverMe, type DriverStatus } from "./api/driver";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -61,6 +62,14 @@ export default function App() {
             element={
               <RequireAuth>
                 <ActiveRide />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <RequireAuth>
+                <Profile />
               </RequireAuth>
             }
           />

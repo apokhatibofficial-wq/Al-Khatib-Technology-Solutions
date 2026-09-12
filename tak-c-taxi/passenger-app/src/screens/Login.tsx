@@ -1,18 +1,21 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { requestOtp } from "../api/auth";
+import { requestOtp, type Gender } from "../api/auth";
 import { ApiError } from "../api/client";
 import { useAuth } from "../contexts/AuthContext";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import logo from "../assets/logo.png";
 
-type Step = "email" | "code";
+type Step = "form" | "code";
 
 export function Login() {
   const navigate = useNavigate();
   const { verifyOtp, loading } = useAuth();
-  const [step, setStep] = useState<Step>("email");
+  const [step, setStep] = useState<Step>("form");
+  const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [gender, setGender] = useState<Gender | "">("");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -21,6 +24,10 @@ export function Login() {
   async function handleRequestOtp(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (!gender) {
+      setError("اختر الجنس");
+      return;
+    }
     setSending(true);
     try {
       await requestOtp(email);
@@ -36,7 +43,7 @@ export function Login() {
     e.preventDefault();
     setError(null);
     try {
-      await verifyOtp(email, code);
+      await verifyOtp(email, code, { fullName, phone, gender: gender as Gender });
       navigate("/", { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "الكود غير صحيح");
@@ -47,9 +54,40 @@ export function Login() {
     <div className="flex min-h-dvh flex-col items-center justify-center gap-8 px-6 py-10">
       <img src={logo} alt="تكسي" className="w-56" />
 
-      {step === "email" ? (
+      {step === "form" ? (
         <form onSubmit={handleRequestOtp} className="w-full max-w-sm space-y-4">
-          <p className="text-center text-ink-soft">سجل دخول بإيميلك لنبدأ</p>
+          <p className="text-center text-ink-soft">عبّي بياناتك لنبدأ</p>
+          <Input required placeholder="الاسم الكامل" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+          <Input
+            type="tel"
+            inputMode="tel"
+            required
+            placeholder="رقم الموبايل"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            dir="ltr"
+            className="text-center"
+          />
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => setGender("male")}
+              className={`flex-1 rounded-2xl border py-3.5 font-bold transition ${
+                gender === "male" ? "border-yellow bg-yellow text-ink" : "border-border bg-cream-soft text-ink-soft"
+              }`}
+            >
+              ذكر
+            </button>
+            <button
+              type="button"
+              onClick={() => setGender("female")}
+              className={`flex-1 rounded-2xl border py-3.5 font-bold transition ${
+                gender === "female" ? "border-yellow bg-yellow text-ink" : "border-border bg-cream-soft text-ink-soft"
+              }`}
+            >
+              أنثى
+            </button>
+          </div>
           <Input
             type="email"
             inputMode="email"
@@ -90,8 +128,8 @@ export function Login() {
           <Button type="submit" disabled={loading || code.length !== 6}>
             {loading ? "..." : "تأكيد"}
           </Button>
-          <Button type="button" variant="ghost" onClick={() => setStep("email")}>
-            غير الإيميل
+          <Button type="button" variant="ghost" onClick={() => setStep("form")}>
+            تعديل البيانات
           </Button>
         </form>
       )}

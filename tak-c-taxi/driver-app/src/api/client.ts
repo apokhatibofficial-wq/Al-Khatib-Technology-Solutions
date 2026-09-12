@@ -21,7 +21,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit, jsonContentType = true): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
     // Cross-origin (this app and the API are on separate subdomains) — the
@@ -29,7 +29,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     // only because the API's CORS config explicitly allows it (server.ts).
     credentials: "include",
     headers: {
-      "Content-Type": "application/json",
+      ...(jsonContentType ? { "Content-Type": "application/json" } : {}),
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       ...init?.headers,
     },
@@ -48,4 +48,14 @@ export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
+  patch: <T>(path: string, body?: unknown) =>
+    request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
+  // No Content-Type header here on purpose — the browser sets
+  // multipart/form-data with the right boundary itself; overriding it
+  // breaks the upload.
+  upload: <T>(path: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<T>(path, { method: "POST", body: form }, false);
+  },
 };

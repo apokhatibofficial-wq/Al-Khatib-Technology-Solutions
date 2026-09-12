@@ -4,6 +4,7 @@ import { Splash } from "./screens/Splash";
 import { Login } from "./screens/Login";
 import { Home } from "./screens/Home";
 import { RequestRide } from "./screens/RequestRide";
+import { Profile } from "./screens/Profile";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user, restoring } = useAuth();
@@ -31,6 +32,14 @@ export default function App() {
             element={
               <RequireAuth>
                 <RequestRide />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <RequireAuth>
+                <Profile />
               </RequireAuth>
             }
           />

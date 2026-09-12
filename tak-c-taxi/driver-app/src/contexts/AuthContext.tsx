@@ -1,13 +1,19 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
 import { setAccessToken } from "../api/client";
-import { verifyOtp as apiVerifyOtp, me as apiMe, logout as apiLogout, type Me } from "../api/auth";
+import {
+  verifyOtp as apiVerifyOtp,
+  me as apiMe,
+  logout as apiLogout,
+  type Me,
+  type RegistrationFields,
+} from "../api/auth";
 import { refresh as apiRefresh } from "../api/session";
 
 interface AuthState {
   user: Me | null;
   loading: boolean;
   restoring: boolean;
-  verifyOtp: (email: string, code: string) => Promise<void>;
+  verifyOtp: (email: string, code: string, fields: RegistrationFields) => Promise<void>;
   logout: () => Promise<void>;
   refreshMe: () => Promise<void>;
 }
@@ -36,10 +42,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })();
   }, []);
 
-  const verifyOtp = useCallback(async (email: string, code: string) => {
+  const verifyOtp = useCallback(async (email: string, code: string, fields: RegistrationFields) => {
     setLoading(true);
     try {
-      const { accessToken } = await apiVerifyOtp(email, code);
+      const { accessToken } = await apiVerifyOtp(email, code, fields);
       setAccessToken(accessToken);
       const fullMe = await apiMe();
       setUser(fullMe);
@@ -54,8 +60,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, []);
 
-  // After POST /driver/apply — the initial /me fetched at login predates
-  // having a driver profile at all, so nothing else picks up the change.
+  // After PATCH /me (profile edits) — nothing else re-fetches /me, so the
+  // updated name/phone/photo would otherwise only show up after a reload.
   const refreshMe = useCallback(async () => {
     setUser(await apiMe());
   }, []);

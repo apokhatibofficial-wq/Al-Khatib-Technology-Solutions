@@ -13,6 +13,15 @@ const emailSchema = z
   .email("Expected a valid email address")
   .transform((s) => s.trim().toLowerCase());
 const otpCodeSchema = z.string().regex(/^\d{6}$/, "Expected a 6-digit code");
+// Collected on the registration form up front (phase-9 follow-up) — the
+// client holds these from the request step and resends them with the code
+// at verify time, which is the only point identity (the email) is actually
+// confirmed.
+const registrationFieldsSchema = z.object({
+  fullName: z.string().trim().min(1, "Full name is required"),
+  phone: z.string().trim().min(1, "Phone number is required"),
+  gender: z.enum(["male", "female"]),
+});
 
 const REFRESH_COOKIE = "refresh_token";
 
@@ -35,16 +44,20 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post("/auth/otp/verify", async (request, reply) => {
-    const body = z.object({ email: emailSchema, code: otpCodeSchema }).safeParse(request.body);
+    const body = z
+      .object({ email: emailSchema, code: otpCodeSchema })
+      .merge(registrationFieldsSchema)
+      .safeParse(request.body);
     if (!body.success) return reply.code(400).send({ error: body.error.issues[0]?.message });
 
     const ok = await verifyOtp(body.data.email, body.data.code);
     if (!ok) return reply.code(401).send({ error: "Invalid or expired code" });
 
+    const { fullName, phone, gender } = body.data;
     const user = await prisma.user.upsert({
       where: { email: body.data.email },
-      update: {},
-      create: { email: body.data.email, status: "PENDING" },
+      update: { fullName, phone, gender },
+      create: { email: body.data.email, fullName, phone, gender, status: "PENDING" },
     });
 
     const tokens = await createSession("user", user.id, undefined, sessionMeta(request));
@@ -185,8 +198,43 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       id: user.id,
       fullName: user.fullName,
       email: user.email,
+      phone: user.phone,
+      gender: user.gender,
+      photoFileId: user.photoFileId,
       status: user.status,
       driver: user.driver ? { status: user.driver.status, isOnline: user.driver.isOnline } : null,
+    });
+  });
+
+  // Profile editing — the same fields the registration form collects, plus
+  // photoFileId (set after a separate POST /uploads call, not uploaded
+  // inline here). Admin identity has no editable profile of this shape.
+  app.patch("/me", { preHandler: requireAuth }, async (request, reply) => {
+    const actor = request.actor!;
+    if (actor.actorType !== "user") return reply.code(403).send({ error: "Not a user account" });
+
+    const body = z
+      .object({
+        fullName: z.string().trim().min(1).optional(),
+        phone: z.string().trim().min(1).optional(),
+        gender: z.enum(["male", "female"]).optional(),
+        photoFileId: z.string().min(1).nullable().optional(),
+      })
+      .safeParse(request.body);
+    if (!body.success) return reply.code(400).send({ error: body.error.issues[0]?.message });
+
+    if (body.data.photoFileId) {
+      const file = await prisma.uploadedFile.findUnique({ where: { id: body.data.photoFileId } });
+      if (!file) return reply.code(400).send({ error: "Unknown photoFileId — upload it via POST /uploads first" });
+    }
+
+    const user = await prisma.user.update({ where: { id: actor.actorId }, data: body.data });
+    return reply.send({
+      id: user.id,
+      fullName: user.fullName,
+      phone: user.phone,
+      gender: user.gender,
+      photoFileId: user.photoFileId,
     });
   });
 }

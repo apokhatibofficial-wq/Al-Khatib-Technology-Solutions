@@ -7,6 +7,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { setOnline, sendLocation } from "../api/driver";
 import { acceptRide, declineRide } from "../api/rides";
 import { Button } from "../components/Button";
+import { fileUrl } from "../api/uploads";
 
 // §6's 2-8s cadence — 5s picked as a documented default in that range, not
 // specified further by the doc.
@@ -14,7 +15,7 @@ const LOCATION_SEND_INTERVAL_MS = 5000;
 
 export function Home({ driverId, initialOnline }: { driverId: string; initialOnline: boolean }) {
   const navigate = useNavigate();
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
   const { position } = useGeolocation();
   const [online, setOnlineState] = useState(initialOnline);
   const [busy, setBusy] = useState(false);
@@ -81,16 +82,34 @@ export function Home({ driverId, initialOnline }: { driverId: string; initialOnl
       <MapView center={position} className="absolute inset-0" />
 
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between p-4">
-        <button
-          type="button"
-          onClick={() => void logout()}
-          aria-label="تسجيل الخروج"
-          className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-xl bg-ink text-cream shadow-md"
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" />
-          </svg>
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => void logout()}
+            aria-label="تسجيل الخروج"
+            className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-xl bg-ink text-cream shadow-md"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" />
+            </svg>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => navigate("/profile")}
+            aria-label="ملفي الشخصي"
+            className="pointer-events-auto flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl bg-ink text-cream shadow-md"
+          >
+            {user?.photoFileId ? (
+              <img src={fileUrl(user.photoFileId)} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="8" r="4" />
+                <path d="M4 20c0-4 3.5-7 8-7s8 3 8 7" strokeLinecap="round" />
+              </svg>
+            )}
+          </button>
+        </div>
 
         <button
           type="button"

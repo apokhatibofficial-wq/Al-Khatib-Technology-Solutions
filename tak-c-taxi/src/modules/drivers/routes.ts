@@ -4,14 +4,20 @@ import { prisma } from "../../db/client.js";
 import { requireAuth, requireDriver } from "../auth/guard.js";
 import { ACTIVE_RIDE_STATES } from "../rides/state-machine.js";
 
+const vehicleSchema = z.object({
+  type: z.string().min(1),
+  model: z.string().min(1),
+  color: z.string().min(1),
+  plate: z.string().min(1),
+  // Optional — not required to apply or drive, matching every comparable
+  // ride-hailing app's own vehicle-photo field. Set via a prior POST
+  // /uploads call.
+  photoFileId: z.string().min(1).optional(),
+});
+
 const applySchema = z.object({
   age: z.number().int().min(18).max(100),
-  vehicle: z.object({
-    type: z.string().min(1),
-    model: z.string().min(1),
-    color: z.string().min(1),
-    plate: z.string().min(1),
-  }),
+  vehicle: vehicleSchema,
 });
 
 /**
@@ -34,6 +40,11 @@ export async function registerDriverRoutes(app: FastifyInstance): Promise<void> 
 
     const plateTaken = await prisma.vehicle.findUnique({ where: { plate: body.data.vehicle.plate } });
     if (plateTaken) return reply.code(409).send({ error: "This plate number is already registered" });
+
+    if (body.data.vehicle.photoFileId) {
+      const file = await prisma.uploadedFile.findUnique({ where: { id: body.data.vehicle.photoFileId } });
+      if (!file) return reply.code(400).send({ error: "Unknown photoFileId — upload it via POST /uploads first" });
+    }
 
     const driver = await prisma.$transaction(async (tx) => {
       const created = await tx.driver.create({
@@ -69,6 +80,29 @@ export async function registerDriverRoutes(app: FastifyInstance): Promise<void> 
       ratingCount: driver.ratingCount,
       vehicle: driver.vehicles[0] ?? null,
     });
+  });
+
+  // Lets a driver add or change the (optional) vehicle photo after
+  // applying, not just at the one-time application form.
+  app.patch("/driver/vehicle", { preHandler: requireDriver }, async (request, reply) => {
+    const body = vehicleSchema.partial().safeParse(request.body);
+    if (!body.success) return reply.code(400).send({ error: body.error.issues[0]?.message });
+
+    if (body.data.photoFileId) {
+      const file = await prisma.uploadedFile.findUnique({ where: { id: body.data.photoFileId } });
+      if (!file) return reply.code(400).send({ error: "Unknown photoFileId — upload it via POST /uploads first" });
+    }
+
+    const vehicle = await prisma.vehicle.findFirst({ where: { driverId: request.driver!.id } });
+    if (!vehicle) return reply.code(404).send({ error: "No vehicle on file" });
+
+    if (body.data.plate && body.data.plate !== vehicle.plate) {
+      const plateTaken = await prisma.vehicle.findUnique({ where: { plate: body.data.plate } });
+      if (plateTaken) return reply.code(409).send({ error: "This plate number is already registered" });
+    }
+
+    const updated = await prisma.vehicle.update({ where: { id: vehicle.id }, data: body.data });
+    return reply.send(updated);
   });
 
   // Without this, reopening the app mid-trip (a reload, a crashed tab, the

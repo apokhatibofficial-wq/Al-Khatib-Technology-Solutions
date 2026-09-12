@@ -180,19 +180,26 @@ model Quote {
 
 model User {
   id        String     @id @default(cuid())
-  /// Null until the post-OTP-verify profile-completion step (not yet built)
-  /// runs — a brand-new account has no name on file at verify time.
+  /// Collected on the registration form before OTP verification (phase-9
+  /// follow-up) — set at account creation, never left to a later
+  /// "complete your profile" step.
   fullName  String?
   /// Always stored lowercased (see auth/otp.ts) — login identity. Originally
   /// phone+SMS per the architecture doc's §5; switched to email (user
   /// decision, phase 9 follow-up) since a Syria-reachable SMS gateway is a
   /// real operational blocker an email provider isn't.
   email     String     @unique
+  /// Plain contact info, collected on the same registration form — NOT the
+  /// login identity (that's still email+OTP above). Distinct column, not a
+  /// reversal of the phone->email login-identity migration.
+  phone     String?
   gender    String?
   status    UserStatus @default(PENDING)
   /// Present only for accounts linked via Google OAuth (§5); OTP-only users
   /// leave this null. Unique constraint allows any number of nulls.
-  googleSub String?    @unique
+  googleSub   String?       @unique
+  photoFileId String?       @unique
+  photo       UploadedFile? @relation("UserPhoto", fields: [photoFileId], references: [id], onDelete: SetNull)
   cityId    String?
   city      City?      @relation(fields: [cityId], references: [id], onDelete: SetNull)
   createdAt DateTime   @default(now())
@@ -206,6 +213,23 @@ model User {
 
   @@index([status])
   @@index([cityId])
+}
+
+/// A real, working image store for profile/vehicle photos — bytes live
+/// directly in Postgres, served through GET /uploads/:id. Deliberately not
+/// S3: same "start simple, move to dedicated storage later if it ever needs
+/// to scale further" progression this project already used for
+/// geocoding/routing/tiles (see README's "Deployment" section) — right for
+/// small, infrequently-changed, read-heavy images at launch scale, not
+/// meant to be the permanent answer for a large media library.
+model UploadedFile {
+  id        String   @id @default(cuid())
+  mimeType  String
+  data      Bytes
+  createdAt DateTime @default(now())
+
+  user    User?    @relation("UserPhoto")
+  vehicle Vehicle? @relation("VehiclePhoto")
 }
 
 model Driver {
@@ -253,8 +277,10 @@ model Vehicle {
   model     String
   color     String
   plate     String   @unique
-  /// Object storage key (S3-compatible), never a public URL — §2/§10.
-  photoKey  String?
+  /// Optional — not required to apply or drive, matching every comparable
+  /// ride-hailing app's own vehicle-photo field.
+  photoFileId String?       @unique
+  photo       UploadedFile? @relation("VehiclePhoto", fields: [photoFileId], references: [id], onDelete: SetNull)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

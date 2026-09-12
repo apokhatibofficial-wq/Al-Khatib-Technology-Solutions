@@ -3,20 +3,34 @@ import type { GeoPoint } from "./geo";
 
 export type DriverStatus = "PENDING" | "APPROVED" | "REJECTED" | "SUSPENDED";
 
+export interface Vehicle {
+  type: string;
+  model: string;
+  color: string;
+  plate: string;
+  photoFileId: string | null;
+}
+
 export interface DriverMe {
   id: string;
   status: DriverStatus;
   isOnline: boolean;
   ratingAvg: number;
   ratingCount: number;
-  vehicle: { type: string; model: string; color: string; plate: string } | null;
+  vehicle: Vehicle | null;
 }
 
 export function applyToDrive(input: {
   age: number;
-  vehicle: { type: string; model: string; color: string; plate: string };
+  vehicle: { type: string; model: string; color: string; plate: string; photoFileId?: string };
 }): Promise<{ id: string; status: DriverStatus }> {
   return api.post("/driver/apply", input);
+}
+
+// Vehicle photo is optional at apply time, matching every comparable
+// ride-hailing app — this lets a driver add or change it afterward too.
+export function updateVehicle(patch: Partial<Omit<Vehicle, "photoFileId">> & { photoFileId?: string }): Promise<Vehicle> {
+  return api.patch("/driver/vehicle", patch);
 }
 
 export function driverMe(): Promise<DriverMe> {
