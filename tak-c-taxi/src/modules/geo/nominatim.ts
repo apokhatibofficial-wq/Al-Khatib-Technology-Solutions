@@ -27,6 +27,17 @@ const USER_AGENT = "tak-c-taxi/0.1 (ride-hailing backend for Idlib; tak-c.taxi)"
 const MIN_REQUEST_INTERVAL_MS = 1100; // stay safely under "1 req/s"
 const CACHE_TTL_SECONDS = 24 * 60 * 60; // addresses don't move; a day is safe
 
+// A bug, not a config knob: without these, "search" is unscoped against the
+// entire planet. Confirmed live — searching a generic term like "المدينة"
+// (the city) returned top hits in Tunisia, Iraq, and Morocco before this,
+// none in Syria at all. countrycodes is a hard filter (this app only ever
+// serves Syria); viewbox is left unbounded (no bounded=1) so it's a
+// relevance *bias* toward the Idlib area — same bounding box dev-seed.ts
+// already uses for the City row — not a hard cutoff that would hide a real
+// destination just outside it.
+const COUNTRY_CODES = "sy";
+const IDLIB_VIEWBOX = "36.0,36.4,37.1,35.5"; // left,top,right,bottom (min_lon,max_lat,max_lon,min_lat)
+
 let throttleQueue: Promise<void> = Promise.resolve();
 let lastRequestAt = 0;
 
@@ -57,6 +68,9 @@ export async function nominatimGeocode(baseUrl: string, query: string): Promise<
       q: query,
       format: "json",
       limit: "5",
+      countrycodes: COUNTRY_CODES,
+      viewbox: IDLIB_VIEWBOX,
+      "accept-language": "ar",
     })}`;
 
     const res = await fetch(url, { headers: { "user-agent": USER_AGENT } });
@@ -76,6 +90,7 @@ export async function nominatimReverse(baseUrl: string, point: GeoPoint): Promis
       lat: String(point.lat),
       lon: String(point.lng),
       format: "json",
+      "accept-language": "ar",
     })}`;
 
     const res = await fetch(url, { headers: { "user-agent": USER_AGENT } });
