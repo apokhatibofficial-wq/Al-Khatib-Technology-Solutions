@@ -1,0 +1,611 @@
+// Tak-C.taxi — database schema, phase 1.
+//
+// Source of truth: the architecture document (§3 "معمارية قاعدة البيانات").
+// Design rules carried over from that document:
+//   - All money is integer cents, never decimals.
+//   - Every invoice/ride carries the pricing_version_id it was priced under;
+//     editing pricing creates a new PricingVersion row, it never mutates one.
+//   - No city is hardcoded — pricing and service area are per-City rows.
+//
+// PostGIS: geography columns (points/polygons) are declared as Unsupported()
+// because Prisma Client has no native geography type. Reads/writes to those
+// columns go through $queryRaw / $executeRaw in the geo/rides service layers
+// (this matches the doc's own §7 pseudocode, which is raw SQL throughout).
+// GIST indexes for those columns are added by hand in the migration SQL —
+// Prisma's `@@index` only knows how to create btree indexes.
+//
+// Deliberately NOT modeled here: a live "driver_live" / in-ride / current-GPS
+// view. §7's matching query reads from `driver_live`, a distinct name from
+// the `drivers` table defined here — read together with the architecture
+// diagram in §1 (Redis holds live locations, locks and queues), that split
+// is intentional: this table is the durable, approved-driver record; live
+// matching state is a phase 4/5 concern (ride state machine + Redis), not
+// phase 1 schema.
+
+generator client {
+  provider             = "prisma-client"
+  output               = "../src/generated/prisma"
+  // Pinned, not left on their "inferred from environment" defaults: that
+  // inference depends on the exact Node.js patch version running `prisma
+  // generate`, which caused a real bug — the same schema, same Prisma
+  // version, produced ".js"-extension internal imports in one environment
+  // and ".ts"-extension ones in another (a newer Node patch's native
+  // TypeScript support changed what got inferred), and since tsc copies
+  // import specifiers verbatim (doesn't rewrite them), the ".ts" version
+  // broke at runtime under plain `node dist/index.js` with no such file.
+  moduleFormat         = "esm"
+  importFileExtension  = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  REJECTED
+  SUSPENDED
+}
+
+enum DriverStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+/// §8 ride state machine. Transitions are enforced server-side only.
+enum RideState {
+  REQUESTED
+  SEARCHING_DRIVER
+  DRIVER_ASSIGNED
+  DRIVER_ACCEPTED
+  DRIVER_ARRIVING
+  DRIVER_ARRIVED
+  TRIP_STARTED
+  WAITING
+  TRIP_COMPLETED
+  CANCELLED_BY_USER
+  CANCELLED_BY_DRIVER
+  NO_DRIVER_FOUND
+}
+
+enum RideOfferResponse {
+  ACCEPT
+  DECLINE
+  TIMEOUT
+}
+
+enum AdminRole {
+  SUPER_ADMIN
+  OPS
+  SUPPORT
+  FINANCE
+  READONLY
+}
+
+/// Actor taxonomy from §1's three frontends, plus ALL for broadcasts.
+/// Shared by Announcement.audience and Notification.recipientType.
+enum Audience {
+  PASSENGER
+  DRIVER
+  ADMIN
+  ALL
+}
+
+// ---------------------------------------------------------------------------
+// Cities & pricing (§9 — the pricing engine is the only source of fare truth)
+// ---------------------------------------------------------------------------
+
+model City {
+  id        String  @id @default(cuid())
+  name      String  @unique
+  /// geography(Point, 4326) — see file header re: Unsupported + raw SQL.
+  centroid  Unsupported("geography(Point, 4326)")
+  /// geography(Polygon, 4326) — service-area boundary.
+  boundary  Unsupported("geography(Polygon, 4326)")
+  isActive  Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users           User[]
+  pricingVersions PricingVersion[]
+  quotes          Quote[]
+
+  @@index([isActive])
+}
+
+/// Immutable once created: changing a price creates a new version with a new
+/// effectiveFrom rather than mutating an existing row, so past invoices keep
+/// citing the version that was actually in effect when they were issued.
+model PricingVersion {
+  id                String   @id @default(cuid())
+  cityId            String
+  city              City     @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  /// Cents per unitMeters of road distance.
+  pricePerUnit      Int
+  unitMeters        Int
+  baseFare          Int
+  minFare           Int
+  waitingFeePerMin  Int
+  currency          String
+  effectiveFrom     DateTime
+  createdById       String?
+  createdBy         AdminUser? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  rides    Ride[]
+  invoices Invoice[]
+  quotes   Quote[]
+
+  @@index([cityId, effectiveFrom])
+}
+
+/// Not in the doc's §3 table list, but required by §4's own API contract:
+/// "العميل يستلم quote_id ولا يرسل سعرًا أبدًا" — the client only ever holds
+/// a quote_id; the priced numbers live here, server-side, until POST /rides
+/// consumes one (and re-validates it — see the pricing module's quote.ts).
+model Quote {
+  id               String         @id @default(cuid())
+  cityId           String
+  city             City           @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  /// geography(Point, 4326).
+  pickup           Unsupported("geography(Point, 4326)")
+  dest             Unsupported("geography(Point, 4326)")
+  pickupLabel      String
+  destLabel        String
+  distanceM        Int
+  durationS        Int
+  routePolyline    String
+  fareCents        Int
+  currency         String
+  pricingVersionId String
+  pricingVersion   PricingVersion @relation(fields: [pricingVersionId], references: [id], onDelete: Restrict)
+  expiresAt        DateTime
+  /// Set once a Ride is created from this quote — a quote is consumed at
+  /// most once (§4's re-validation rule would be pointless otherwise).
+  consumedAt       DateTime?
+  createdAt        DateTime       @default(now())
+
+  @@index([expiresAt])
+}
+
+// ---------------------------------------------------------------------------
+// Identity: riders & drivers
+// ---------------------------------------------------------------------------
+
+model User {
+  id        String     @id @default(cuid())
+  /// Collected on the registration form before OTP verification (phase-9
+  /// follow-up) — set at account creation, never left to a later
+  /// "complete your profile" step.
+  fullName  String?
+  /// Always stored lowercased (see auth/otp.ts) — login identity. Originally
+  /// phone+SMS per the architecture doc's §5; switched to email (user
+  /// decision, phase 9 follow-up) since a Syria-reachable SMS gateway is a
+  /// real operational blocker an email provider isn't.
+  email     String     @unique
+  /// Plain contact info, collected on the same registration form — NOT the
+  /// login identity (that's still email+OTP above). Distinct column, not a
+  /// reversal of the phone->email login-identity migration.
+  phone     String?
+  gender    String?
+  status    UserStatus @default(PENDING)
+  /// Present only for accounts linked via Google OAuth (§5); OTP-only users
+  /// leave this null. Unique constraint allows any number of nulls.
+  googleSub   String?       @unique
+  photoFileId String?       @unique
+  photo       UploadedFile? @relation("UserPhoto", fields: [photoFileId], references: [id], onDelete: SetNull)
+  cityId    String?
+  city      City?      @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  driver            Driver?
+  ridesAsRider      Ride[]           @relation("RideRider")
+  ratingsGiven      Rating[]
+  pushSubscriptions PushSubscription[]
+  sessions          Session[]
+
+  @@index([status])
+  @@index([cityId])
+}
+
+/// A real, working image store for profile/vehicle photos — bytes live
+/// directly in Postgres, served through GET /uploads/:id. Deliberately not
+/// S3: same "start simple, move to dedicated storage later if it ever needs
+/// to scale further" progression this project already used for
+/// geocoding/routing/tiles (see README's "Deployment" section) — right for
+/// small, infrequently-changed, read-heavy images at launch scale, not
+/// meant to be the permanent answer for a large media library.
+model UploadedFile {
+  id        String   @id @default(cuid())
+  mimeType  String
+  data      Bytes
+  createdAt DateTime @default(now())
+
+  user    User?    @relation("UserPhoto")
+  vehicle Vehicle? @relation("VehiclePhoto")
+}
+
+model Driver {
+  id             String       @id @default(cuid())
+  userId         String       @unique
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  age            Int
+  status         DriverStatus @default(PENDING)
+  approvedById   String?
+  approvedBy     AdminUser?   @relation(fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt     DateTime?
+  ratingAvg      Float        @default(0)
+  ratingCount    Int          @default(0)
+  isOnline       Boolean      @default(false)
+  lastSeenAt     DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  vehicles       Vehicle[]
+  documents      DriverDocument[]
+  ridesAsDriver  Ride[]           @relation("RideDriver")
+  rideOffers     RideOffer[]
+  rideLocations  RideLocation[]
+  waitingEvents  WaitingEvent[]
+  ratingsReceived Rating[]
+
+  @@index([status])
+}
+
+// §7 candidate matching reads from a source the doc calls `driver_live`,
+// distinct from the durable Driver row above — see the phase 1 schema
+// header. Phase 4 stood that in with a plain-Postgres DriverLiveLocation
+// table (dropped in the migration that added Redis, see the phase 5 note
+// on the migration below); phase 5 replaces it with Redis's native
+// geospatial commands (GEOADD/GEOSEARCH) in src/modules/realtime/geo.ts —
+// this is exactly the live-locations store §1's architecture diagram
+// calls for, matching §6's 2-8s update cadence far better than a Postgres
+// row upsert at that frequency would.
+
+model Vehicle {
+  id        String   @id @default(cuid())
+  driverId  String
+  driver    Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  type      String
+  model     String
+  color     String
+  plate     String   @unique
+  /// Optional — not required to apply or drive, matching every comparable
+  /// ride-hailing app's own vehicle-photo field.
+  photoFileId String?       @unique
+  photo       UploadedFile? @relation("VehiclePhoto", fields: [photoFileId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([driverId])
+}
+
+model DriverDocument {
+  id           String     @id @default(cuid())
+  driverId     String
+  driver       Driver     @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  kind         String
+  fileKey      String
+  verifiedById String?
+  verifiedBy   AdminUser? @relation(fields: [verifiedById], references: [id], onDelete: SetNull)
+  verifiedAt   DateTime?
+  createdAt    DateTime   @default(now())
+
+  @@index([driverId])
+}
+
+// ---------------------------------------------------------------------------
+// Auth & sessions (§5). Access tokens are short-lived JWTs, never persisted.
+// Refresh tokens are JWTs too (jti = this row's id) so JWT_REFRESH_SECRET
+// alone can't mint a valid one — but each jti is tracked here so a rotation
+// chain (familyId) can be revoked wholesale the moment a *retired* jti is
+// presented again (reuse detection, §5/§10).
+// ---------------------------------------------------------------------------
+
+model Session {
+  id          String     @id @default(cuid())
+  familyId    String
+  userId      String?
+  user        User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  adminUserId String?
+  adminUser   AdminUser? @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+  userAgent   String?
+  ipAddress   String?
+  createdAt   DateTime   @default(now())
+  expiresAt   DateTime
+  revokedAt   DateTime?
+
+  @@index([familyId])
+  @@index([userId])
+  @@index([adminUserId])
+  @@index([expiresAt])
+}
+
+/// One row per OTP send (§5 OTP path, §10 "OTP بحد محاولات"). codeHash is an
+/// HMAC, not a reversible encoding — the raw code only ever exists in the
+/// email itself and briefly in memory on this server while sending it.
+model OtpRequest {
+  id         String    @id @default(cuid())
+  email      String
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([email, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Rides (§7 assignment, §8 state machine, §9 pricing)
+// ---------------------------------------------------------------------------
+
+model Ride {
+  id                 String    @id @default(cuid())
+  userId             String
+  user               User      @relation("RideRider", fields: [userId], references: [id], onDelete: Restrict)
+  driverId           String?
+  driver             Driver?   @relation("RideDriver", fields: [driverId], references: [id], onDelete: Restrict)
+  state              RideState @default(REQUESTED)
+  /// geography(Point, 4326) — set at quote time, never client-derived after.
+  pickup             Unsupported("geography(Point, 4326)")
+  dest               Unsupported("geography(Point, 4326)")
+  pickupLabel        String
+  destLabel          String
+  plannedDistanceM   Int
+  plannedDurationS   Int
+  routePolyline      String
+  quotedFareCents    Int
+  pricingVersionId   String
+  pricingVersion     PricingVersion @relation(fields: [pricingVersionId], references: [id], onDelete: Restrict)
+  requestedAt        DateTime  @default(now())
+  acceptedAt         DateTime?
+  startedAt          DateTime?
+  endedAt            DateTime?
+  cancelReason       String?
+  cancelledBy        String?
+
+  rideOffers     RideOffer[]
+  rideStateEvents RideStateEvent[]
+  rideLocations RideLocation[]
+  waitingEvents WaitingEvent[]
+  invoice       Invoice?
+  rating        Rating?
+
+  @@index([userId])
+  @@index([driverId])
+  @@index([state])
+  @@index([requestedAt])
+}
+
+/// One row per driver offered a given ride, in candidate rank order (§7).
+/// Row-level locking on Ride.state (not on this table) is what actually
+/// prevents two drivers from winning the same ride — see the migration
+/// notes for the FOR UPDATE pattern this table is read/written under.
+model RideOffer {
+  id          String             @id @default(cuid())
+  rideId      String
+  ride        Ride               @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  driverId    String
+  driver      Driver             @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  rank        Int
+  sentAt      DateTime           @default(now())
+  respondedAt DateTime?
+  response    RideOfferResponse?
+
+  @@index([rideId])
+  @@index([driverId])
+}
+
+/// §8: "الانتقالات مسموحة فقط عبر الجدول أعلاه ويفرضها السيرفر مع طابع زمني
+/// وموقع لكل انتقال" — every transition, not just a handful of named
+/// columns on Ride, needs its own timestamp AND location. Ride.acceptedAt/
+/// startedAt/endedAt stay as cheap headline timestamps for common queries;
+/// this table is the actual auditable transition history the doc asks for.
+model RideStateEvent {
+  id         String     @id @default(cuid())
+  rideId     String
+  ride       Ride       @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  fromState  RideState?
+  toState    RideState
+  /// geography(Point, 4326) — null only for transitions with no meaningful
+  /// location (e.g. NO_DRIVER_FOUND after an unanswered search).
+  point      Unsupported("geography(Point, 4326)")?
+  /// Who/what caused it: a User id, a Driver id, or null for a
+  /// system-triggered transition (offer timeout, NO_DRIVER_FOUND).
+  actorId    String?
+  occurredAt DateTime   @default(now())
+
+  @@index([rideId, occurredAt])
+}
+
+/// §4: "كل الطلبات الحساسة تحمل Idempotency-Key ليأمن التكرار عند ضعف
+/// الشبكة" — one row per (actor, endpoint, client-supplied key). A retried
+/// request with the same key replays the stored response instead of
+/// re-running the side effect.
+model IdempotencyKey {
+  id             String   @id @default(cuid())
+  actorId        String
+  endpoint       String
+  key            String
+  responseStatus Int
+  responseBody   Json
+  createdAt      DateTime @default(now())
+
+  @@unique([actorId, endpoint, key])
+}
+
+/// High-frequency location pings (§6: 2-8s while active, 30s idle). No
+/// surrogate id in the source doc's own schema listing — a composite key on
+/// (rideId, serverTs) matches an append-only time series better than a cuid
+/// nothing else ever looks up by.
+model RideLocation {
+  rideId    String
+  ride      Ride     @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  driverId  String
+  driver    Driver   @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  /// geography(Point, 4326).
+  point     Unsupported("geography(Point, 4326)")
+  accuracyM Float
+  speedMps  Float?
+  heading   Float?
+  deviceTs  DateTime
+  serverTs  DateTime @default(now())
+
+  @@id([rideId, serverTs])
+  @@index([driverId, serverTs])
+}
+
+/// Waiting-fee counter (§9). durationS is computed server-side from
+/// endedAt - startedAt when the counter stops, never client-supplied.
+model WaitingEvent {
+  id         String    @id @default(cuid())
+  rideId     String
+  ride       Ride      @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  driverId   String
+  driver     Driver    @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  startedAt  DateTime  @default(now())
+  endedAt    DateTime?
+  /// geography(Point, 4326).
+  startPoint Unsupported("geography(Point, 4326)")
+  endPoint   Unsupported("geography(Point, 4326)")?
+  durationS  Int?
+
+  @@index([rideId])
+  @@index([driverId])
+}
+
+model Invoice {
+  id               String   @id @default(cuid())
+  rideId           String   @unique
+  ride             Ride     @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  baseCents        Int
+  distanceCents    Int
+  waitingCents     Int
+  extraCents       Int
+  totalCents       Int
+  currency         String
+  distanceM        Int
+  waitingS         Int
+  pricingVersionId String
+  pricingVersion   PricingVersion @relation(fields: [pricingVersionId], references: [id], onDelete: Restrict)
+  issuedAt         DateTime @default(now())
+
+  @@index([issuedAt])
+}
+
+model Rating {
+  id        String   @id @default(cuid())
+  rideId    String   @unique
+  ride      Ride     @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  driverId  String
+  driver    Driver   @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  /// 1-5; range is enforced at the application layer (no DB CHECK constraint
+  /// yet — Prisma has no declarative way to add one as of this schema).
+  stars     Int
+  comment   String?
+  createdAt DateTime @default(now())
+
+  @@index([driverId])
+}
+
+// ---------------------------------------------------------------------------
+// Admin, announcements, notifications, audit (§7.10, §10)
+// ---------------------------------------------------------------------------
+
+model AdminUser {
+  id          String    @id @default(cuid())
+  email       String    @unique
+  role        AdminRole
+  /// TOTP secret; MFA is mandatory for admin per §10's threat table.
+  mfaSecret   String?
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  approvedDrivers    Driver[]
+  verifiedDocuments  DriverDocument[]
+  pricingVersions    PricingVersion[]
+  announcements      Announcement[]
+  sessions           Session[]
+
+  @@index([role])
+}
+
+model Announcement {
+  id          String    @id @default(cuid())
+  title       String
+  body        String
+  mediaKey    String?
+  audience    Audience
+  startsAt    DateTime?
+  endsAt      DateTime?
+  isActive    Boolean   @default(true)
+  createdById String?
+  createdBy   AdminUser? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([audience, isActive])
+}
+
+/// Polymorphic by design (recipientType + recipientId, no FK): a recipient
+/// may be a User, a Driver (itself a User), or an admin, and ALL has no
+/// single recipient — matching the doc's own §3 column list exactly.
+model Notification {
+  id             String    @id @default(cuid())
+  recipientType  Audience
+  recipientId    String?
+  title          String
+  body           String
+  sentAt         DateTime  @default(now())
+  deliveryStatus String
+  readAt         DateTime?
+
+  @@index([recipientType, recipientId])
+  @@index([sentAt])
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  platform  String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+/// actorId/actorRole are deliberately plain strings, not a relation: the
+/// actor may be an AdminUser, a Driver, or a User depending on actorRole,
+/// same polymorphism as Notification above.
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String
+  actorRole  String
+  action     String
+  entity     String
+  entityId   String
+  oldValue   Json?
+  newValue   Json?
+  reason     String?
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([actorId])
+  @@index([entity, entityId])
+  @@index([createdAt])
+}

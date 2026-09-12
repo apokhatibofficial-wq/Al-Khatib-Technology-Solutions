@@ -1,0 +1,145 @@
+# Real deployment topology (currently: GCP free-tier e2-micro, see README.md's
+# "Deployment" section). Differs from docker-compose.yml (local dev) in three
+# ways: secrets come from a real .env.production file (never committed — see
+# .gitignore's ".env*" rule) instead of the hardcoded dev placeholders,
+# postgres/redis are not published to the host at all (only the api container
+# can reach them, over the compose-internal network), and everything restarts
+# automatically on crash or VM reboot.
+#
+# Usage on the server:
+#   docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: tak_c_taxi
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: tak_c_taxi
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgis-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tak_c_taxi -d tak_c_taxi"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: .
+      target: migrate
+    environment:
+      DATABASE_URL: postgresql://tak_c_taxi:${POSTGRES_PASSWORD}@postgres:5432/tak_c_taxi
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  # Real routing, not a stub: serves the actual Idlib/Dana/Sarmada OSRM
+  # extract built and verified in README.md's "OSRM verified with real
+  # Idlib/Dana/Sarmada data" section (~3.2MB total — tiny, because it's
+  # deliberately scoped to just those areas, not all of Idlib province —
+  # easily fits this box). ./osrm-data holds the combined.osrm* files
+  # (deployed straight to the server, not committed — see the top-level
+  # comment's "not in this repo" note below). Nominatim (GEOCODER_URL,
+  # address-search) doesn't get the same treatment — self-hosting it is a
+  # full second Postgres-backed search index that genuinely doesn't fit
+  # alongside everything else on 1GB RAM — so the api service instead
+  # points GEOCODER_URL at the public nominatim.openstreetmap.org; see
+  # README's "Address search via public Nominatim" section for how that's
+  # kept usage-policy-compliant (rate limiting + caching in the client
+  # code, not just at this compose-file level).
+  osrm:
+    image: osrm/osrm-backend
+    command: osrm-routed --algorithm mld /data/combined.osrm
+    volumes:
+      - ./osrm-data:/data:ro
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      target: runtime
+    # No published port here on purpose: HTTPS via the caddy service below
+    # is verified solid (real Let's Encrypt cert issued, /health,
+    # /rides/quote, /geo/geocode all confirmed over https://api.tak-c.taxi
+    # — see README's "Real HTTPS via Caddy + Let's Encrypt"), so the raw
+    # HTTP origin no longer needs to be reachable in parallel with it.
+    # Other containers still reach api:3000 directly over the compose-
+    # internal network — only external host access goes through caddy now.
+    environment:
+      # NODE_ENV is "production" now — every env.ts requirement is
+      # satisfied (EMAIL_*, ROUTING_ENGINE_URL, GEOCODER_URL, VAPID_* all
+      # set below), and the one remaining blocker (auth/routes.ts's
+      # `secure: NODE_ENV === "production"` cookie flag needing real
+      # HTTPS in front of this box, or browsers silently drop the cookie
+      # and break login) is resolved by the caddy service below.
+      NODE_ENV: production
+      DATABASE_URL: postgresql://tak_c_taxi:${POSTGRES_PASSWORD}@postgres:5432/tak_c_taxi
+      REDIS_URL: redis://redis:6379
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      EMAIL_PROVIDER_KEY: ${EMAIL_PROVIDER_KEY}
+      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
+      VAPID_SUBJECT: ${VAPID_SUBJECT}
+      ROUTING_ENGINE_URL: http://osrm:5000
+      GEOCODER_URL: ${GEOCODER_URL}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      # GOOGLE_OAUTH_* intentionally unset — that flow isn't exercised yet.
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      osrm:
+        condition: service_started
+    restart: unless-stopped
+
+  # Real HTTPS, not a self-signed cert: Caddy requests and auto-renews a
+  # real Let's Encrypt certificate for api.tak-c.taxi and tak-c.taxi (DNS
+  # A records -> this box's external IP, set up manually in GoDaddy —
+  # Caddy just needs that to already resolve) and reverse-proxies API
+  # traffic to the api container. It also serves the passenger PWA's
+  # static build directly (./passenger-dist -> the app's own `npm run
+  # build` output, deployed straight to the server the same way
+  # ./osrm-data is, not committed — see that comment below) — no separate
+  # app server needed for a static SPA. caddy-data persists the
+  # certificate/account state across restarts so it isn't re-issued (and
+  # rate-limited by Let's Encrypt) on every deploy.
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./passenger-dist:/srv/passenger:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  caddy-data:
+  caddy-config:
+
+# Note: ./osrm-data (the combined.osrm* files the osrm service mounts) is
+# deployed directly to the server alongside this file, not committed to
+# git — same treatment as .env.production, since it's a generated data
+# artifact (rebuildable via scripts/setup-osrm-idlib.sh), not source.
