@@ -49,7 +49,17 @@ export async function buildServer() {
   // credentials: true so the refresh-token cookie (auth/routes.ts) survives
   // the frontend's cross-origin fetch — requires an explicit origin list,
   // never "*", per the CORS spec (see CORS_ORIGINS's comment in env.ts).
-  await app.register(cors, { origin: env.CORS_ORIGINS, credentials: true });
+  // methods is explicit because @fastify/cors's own default preflight
+  // response only ever allowed GET,HEAD,POST here — never noticed before
+  // since every route was GET/POST until PATCH /me and PATCH
+  // /driver/vehicle; confirmed live against the deployed API that PATCH was
+  // genuinely missing from access-control-allow-methods (i.e. blocked by
+  // real browser CORS, not just untested).
+  await app.register(cors, {
+    origin: env.CORS_ORIGINS,
+    credentials: true,
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"],
+  });
   await app.register(websocket);
   await app.register(multipart);
 
