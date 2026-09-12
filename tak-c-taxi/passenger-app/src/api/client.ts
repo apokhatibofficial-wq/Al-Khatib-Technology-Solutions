@@ -37,6 +37,31 @@ async function request<T>(path: string, init?: RequestInit, jsonContentType = tr
   return res.json() as Promise<T>;
 }
 
+// Not routed through request<T>() — the response is a binary file, not
+// JSON. Fetches it as an authenticated Blob (a plain <a href> can't carry
+// the Bearer token) and hands it to the browser as a save via a throwaway
+// object URL, the standard pattern for downloading an authenticated
+// resource from an SPA.
+async function download(path: string, filename: string): Promise<void> {
+  const res = await fetch(`${API_URL}${path}`, {
+    credentials: "include",
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new ApiError(res.status, body.error ?? res.statusText);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
@@ -51,4 +76,5 @@ export const api = {
     form.append("file", file);
     return request<T>(path, { method: "POST", body: form }, false);
   },
+  download,
 };

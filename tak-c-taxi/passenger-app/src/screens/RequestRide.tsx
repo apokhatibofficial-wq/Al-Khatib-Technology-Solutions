@@ -7,7 +7,7 @@ import { ApiError } from "../api/client";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 
-type Step = "search" | "results" | "quote" | "requested";
+type Step = "search" | "results" | "quote";
 
 export function RequestRide() {
   const navigate = useNavigate();
@@ -17,7 +17,6 @@ export function RequestRide() {
   const [results, setResults] = useState<GeocodeResult[]>([]);
   const [dest, setDest] = useState<GeocodeResult | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
-  const [rideId, setRideId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -67,8 +66,7 @@ export function RequestRide() {
     setBusy(true);
     try {
       const ride = await createRide(quote.quote_id);
-      setRideId(ride.id);
-      setStep("requested");
+      navigate(`/ride/${ride.id}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "تعذر تأكيد الرحلة");
     } finally {
@@ -141,17 +139,6 @@ export function RequestRide() {
           {error && <p className="text-sm text-red-600">{error}</p>}
           <Button onClick={handleConfirm} disabled={busy}>
             {busy ? "..." : "أكد الطلب"}
-          </Button>
-        </div>
-      )}
-
-      {step === "requested" && rideId && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
-          <div className="text-5xl">🚕</div>
-          <h1 className="text-xl font-bold">طلبك وصل!</h1>
-          <p className="text-ink-soft">عم نبحثلك عن سواق قريب منك...</p>
-          <Button variant="ghost" onClick={() => navigate("/")}>
-            رجوع للرئيسية
           </Button>
         </div>
       )}

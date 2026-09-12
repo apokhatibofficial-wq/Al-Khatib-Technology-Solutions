@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { MapView } from "../components/MapView";
 import { useGeolocation } from "../hooks/useGeolocation";
-import { getRide, markArrived, startTrip, endTrip, startWaiting, stopWaiting, type Ride } from "../api/rides";
+import { getRide, markArrived, startTrip, endTrip, startWaiting, stopWaiting, downloadInvoice, type Ride } from "../api/rides";
+import { ApiError } from "../api/client";
 import { Button } from "../components/Button";
 
 const ACTION_BY_STATE: Record<string, { label: string; next: (id: string, point: { lat: number; lng: number }) => Promise<{ id: string; state: string }> }> = {
@@ -18,6 +19,8 @@ export function ActiveRide() {
   const [ride, setRide] = useState<Ride | null>(null);
   const [busy, setBusy] = useState(false);
   const [invoice, setInvoice] = useState<{ totalCents: number; currency: string; distanceM: number; waitingS: number } | null>(null);
+  const [downloadingInvoice, setDownloadingInvoice] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -72,6 +75,19 @@ export function ActiveRide() {
 
   if (!ride) return null;
 
+  async function handleDownloadInvoice() {
+    if (!id) return;
+    setDownloadError(null);
+    setDownloadingInvoice(true);
+    try {
+      await downloadInvoice(id);
+    } catch (err) {
+      setDownloadError(err instanceof ApiError ? err.message : "تعذر تنزيل الفاتورة");
+    } finally {
+      setDownloadingInvoice(false);
+    }
+  }
+
   if (ride.state === "TRIP_COMPLETED") {
     return (
       <div className="flex min-h-dvh flex-col items-center justify-center gap-4 px-6 text-center">
@@ -85,6 +101,10 @@ export function ActiveRide() {
             <span className="mt-2 block text-sm text-ink-soft">{(invoice.distanceM / 1000).toFixed(1)} كم</span>
           </div>
         )}
+        {downloadError && <p className="text-sm text-red-600">{downloadError}</p>}
+        <Button variant="ghost" onClick={() => void handleDownloadInvoice()} disabled={downloadingInvoice}>
+          {downloadingInvoice ? "..." : "تنزيل الفاتورة PDF"}
+        </Button>
         <Button onClick={() => navigate("/")}>رجوع للرئيسية</Button>
       </div>
     );

@@ -68,6 +68,10 @@ COPY --from=runtime-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
 COPY package.json ./
+# Invoice PDFs (invoice-pdf.ts) embed the real logo + Cairo font files from
+# here at runtime — previously nothing in the runtime image read assets/,
+# so it was never copied in; now something does.
+COPY assets ./assets
 EXPOSE 3000
 USER node
 CMD ["node", "dist/index.js"]

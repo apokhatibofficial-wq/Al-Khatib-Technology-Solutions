@@ -23,6 +23,18 @@ export function createRide(quoteId: string): Promise<{ id: string; state: string
   return api.post("/rides", { quote_id: quoteId });
 }
 
-export function getRide(id: string): Promise<Record<string, unknown> & { id: string; state: string }> {
+export interface Ride {
+  id: string;
+  state: string;
+  pickupLabel: string;
+  destLabel: string;
+  invoice: { totalCents: number; currency: string; distanceM: number; waitingS: number } | null;
+}
+
+export function getRide(id: string): Promise<Ride> {
   return api.get(`/rides/${id}`);
+}
+
+export function downloadInvoice(id: string): Promise<void> {
+  return api.download(`/rides/${id}/invoice.pdf`, `tak-c-taxi-invoice-${id}.pdf`);
 }

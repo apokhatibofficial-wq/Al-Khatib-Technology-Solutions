@@ -48,3 +48,7 @@ export function stopWaiting(id: string, point: { lat: number; lng: number }): Pr
 export function cancelRide(id: string, reason?: string): Promise<{ id: string; cancelledBy: string }> {
   return api.post(`/rides/${id}/cancel`, { reason });
 }
+
+export function downloadInvoice(id: string): Promise<void> {
+  return api.download(`/rides/${id}/invoice.pdf`, `tak-c-taxi-invoice-${id}.pdf`);
+}

@@ -10,6 +10,7 @@ import { setDriverLocation, clearDriverLocation } from "../realtime/geo.js";
 import { broadcastDriverLocation } from "../realtime/broadcast.js";
 import { checkLocationPlausibility } from "../realtime/plausibility.js";
 import { issueInvoice } from "../pricing/invoice.js";
+import { buildInvoicePdf, InvoiceNotFoundError } from "../pricing/invoice-pdf.js";
 
 const pointSchema = z.object({ lat: z.coerce.number().min(-90).max(90), lng: z.coerce.number().min(-180).max(180) });
 
@@ -100,6 +101,29 @@ export async function registerRideRoutes(app: FastifyInstance): Promise<void> {
     if (!ride) return reply.code(404).send({ error: "Not found" });
     const invoice = ride.state === "TRIP_COMPLETED" ? await prisma.invoice.findUnique({ where: { rideId: id } }) : null;
     return reply.send({ ...ride, invoice });
+  });
+
+  // Same IDOR discipline as GET /rides/:id (§10) — rider, assigned driver,
+  // or admin. Regenerated on every request from the permanently-stored
+  // invoice/ride rows rather than stored as a file (see invoice-pdf.ts).
+  app.get("/rides/:id/invoice.pdf", { preHandler: requireAuth }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const ride = await loadRideForActor(id, request.actor!);
+    if (!ride) return reply.code(404).send({ error: "Not found" });
+    if (ride.state !== "TRIP_COMPLETED") {
+      return reply.code(409).send({ error: "Invoice is only available once the ride is completed" });
+    }
+
+    try {
+      const pdf = await buildInvoicePdf(id);
+      return reply
+        .header("content-type", "application/pdf")
+        .header("content-disposition", `attachment; filename="tak-c-taxi-invoice-${id}.pdf"`)
+        .send(pdf);
+    } catch (err) {
+      if (err instanceof InvoiceNotFoundError) return reply.code(404).send({ error: "No invoice for this ride" });
+      throw err;
+    }
   });
 
   app.post("/rides/:id/cancel", { preHandler: requireAuth }, async (request, reply) => {
