@@ -9,9 +9,9 @@ import { TaxiCarIcon, StopwatchIcon, DriverCapIcon } from "../components/BrandIc
 // counter, rating the driver) are ones the design board calls out as
 // worth making sure every new rider actually sees before their first ride.
 const SLIDES = [
-  { Icon: TaxiCarIcon, title: "انت في سوريا", text: "تكسي خدمة محلية بتشتغل بمدينتك بإدلب — سواقين من المنطقة عارفين الطرقات منيح" },
-  { Icon: StopwatchIcon, title: "عداد وقت الانتظار", text: "إذا تأخرت شوي بمكان الركوب، في عداد بيحسب وقت انتظار السواق وبينضاف بلطف عالفاتورة" },
-  { Icon: DriverCapIcon, title: "يمكنكم تقييم السائق", text: "بعد كل رحلة رح تقدر تقيّم السواق — تقييمك بيساعدنا نحافظ على جودة الخدمة" },
+  { Icon: TaxiCarIcon, iconSize: 230, title: "انت في سوريا", text: "تكسي خدمة محلية بتشتغل بمدينتك بإدلب — سواقين من المنطقة عارفين الطرقات منيح" },
+  { Icon: StopwatchIcon, iconSize: 120, title: "عداد وقت الانتظار", text: "لو طلبت من السائق يوقف وينتظرك بمشوار — مثلاً عند محل — في عداد بيحسب وقت الانتظار وبينضاف بلطف عالفاتورة" },
+  { Icon: DriverCapIcon, iconSize: 120, title: "يمكنكم تقييم السائق", text: "بعد كل رحلة رح تقدر تقيّم السواق — تقييمك بيساعدنا نحافظ على جودة الخدمة" },
 ];
 
 export function Onboarding() {
@@ -23,14 +23,14 @@ export function Onboarding() {
     else navigate("/", { replace: true });
   }
 
-  const { Icon, title, text } = SLIDES[slide]!;
+  const { Icon, iconSize, title, text } = SLIDES[slide]!;
 
   return (
     <div className="flex min-h-dvh flex-col items-center justify-between px-6 py-10">
       <div />
       <div className="flex flex-col items-center gap-6 text-center">
-        <Icon />
-        <h2 className="text-2xl font-extrabold text-green">{title}</h2>
+        <Icon size={iconSize} />
+        <h2 className="font-display text-2xl font-extrabold text-green">{title}</h2>
         <p className="max-w-xs text-ink-soft">{text}</p>
       </div>
 

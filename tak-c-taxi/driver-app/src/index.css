@@ -1,5 +1,37 @@
 @import "tailwindcss";
 
+/* Self-hosted — "Cairo" was previously only named in --font-sans with no
+   @font-face and no <link>, so every browser silently fell back to
+   Tahoma/system sans. These are the same static instances already vendored
+   for the backend's PDF invoices (assets/fonts/), just woff2-compressed. */
+@font-face {
+  font-family: "Cairo";
+  src: url("./assets/fonts/Cairo-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Cairo";
+  src: url("./assets/fonts/Cairo-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Cairo";
+  src: url("./assets/fonts/Cairo-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
+/* Headline-only display face from the design board (0808TAXI.pdf) — Arabic
+   glyphs and Arabic-Indic digits only, no Latin/ASCII, so it can't replace
+   --font-sans. Used for short titles like onboarding headings. */
+@font-face {
+  font-family: "Free Palestine";
+  src: url("./assets/fonts/FreePalestine-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+
 /* Brand tokens sampled from the real logo/mockups (see tak-c-taxi/assets/logo.png
    and the shared design board) — cream background, charcoal ink, taxi-headlight
    yellow accent. Kept as CSS vars (not just Tailwind config) so non-Tailwind
@@ -27,6 +59,7 @@
   --color-green: var(--color-green);
   --color-green-soft: var(--color-green-soft);
   --font-sans: "Cairo", "Tahoma", -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Free Palestine", "Cairo", "Tahoma", sans-serif;
 }
 
 html,
