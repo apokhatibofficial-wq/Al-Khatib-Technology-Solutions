@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { Splash } from "./screens/Splash";
 import { Login } from "./screens/Login";
+import { Onboarding } from "./screens/Onboarding";
 import { Apply } from "./screens/Apply";
 import { Pending } from "./screens/Pending";
 import { Home } from "./screens/Home";
@@ -56,6 +57,14 @@ export default function App() {
         <Routes>
           <Route path="/splash" element={<Splash />} />
           <Route path="/login" element={<Login />} />
+          <Route
+            path="/onboarding"
+            element={
+              <RequireAuth>
+                <Onboarding />
+              </RequireAuth>
+            }
+          />
           <Route path="/" element={<Root />} />
           <Route
             path="/ride/:id"

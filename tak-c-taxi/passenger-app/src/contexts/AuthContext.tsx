@@ -13,7 +13,7 @@ interface AuthState {
   user: Me | null;
   loading: boolean;
   restoring: boolean;
-  verifyOtp: (email: string, code: string, fields: RegistrationFields) => Promise<void>;
+  verifyOtp: (email: string, code: string, fields: RegistrationFields) => Promise<{ isNewUser: boolean }>;
   logout: () => Promise<void>;
   refreshMe: () => Promise<void>;
 }
@@ -45,10 +45,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const verifyOtp = useCallback(async (email: string, code: string, fields: RegistrationFields) => {
     setLoading(true);
     try {
-      const { accessToken } = await apiVerifyOtp(email, code, fields);
+      const { accessToken, isNewUser } = await apiVerifyOtp(email, code, fields);
       setAccessToken(accessToken);
       const fullMe = await apiMe();
       setUser(fullMe);
+      return { isNewUser };
     } finally {
       setLoading(false);
     }

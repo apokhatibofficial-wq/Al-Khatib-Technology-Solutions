@@ -43,8 +43,8 @@ export function Login() {
     e.preventDefault();
     setError(null);
     try {
-      await verifyOtp(email, code, { fullName, phone, gender: gender as Gender });
-      navigate("/", { replace: true });
+      const { isNewUser } = await verifyOtp(email, code, { fullName, phone, gender: gender as Gender });
+      navigate(isNewUser ? "/onboarding" : "/", { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "الكود غير صحيح");
     }

@@ -5,6 +5,7 @@ import { useGeolocation } from "../hooks/useGeolocation";
 import { getRide, markArrived, startTrip, endTrip, startWaiting, stopWaiting, downloadInvoice, type Ride } from "../api/rides";
 import { ApiError } from "../api/client";
 import { Button } from "../components/Button";
+import { StopwatchIcon } from "../components/BrandIcons";
 
 const ACTION_BY_STATE: Record<string, { label: string; next: (id: string, point: { lat: number; lng: number }) => Promise<{ id: string; state: string }> }> = {
   DRIVER_ARRIVING: { label: "وصلت لمكان الركوب", next: markArrived },
@@ -118,6 +119,13 @@ export function ActiveRide() {
       <div className="absolute inset-x-4 bottom-6 space-y-3 rounded-2xl bg-cream-soft p-5 shadow-lg">
         <p className="text-sm text-ink-soft">إلى: {ride.destLabel}</p>
         {error && <p className="text-sm text-red-600">{error}</p>}
+
+        {ride.state === "WAITING" && (
+          <div className="flex items-center justify-center gap-2 rounded-xl bg-cream py-2 text-green">
+            <StopwatchIcon size={28} />
+            <span className="font-bold">عداد الانتظار شغّال</span>
+          </div>
+        )}
 
         {ride.state === "TRIP_STARTED" && (
           <div className="flex gap-3">

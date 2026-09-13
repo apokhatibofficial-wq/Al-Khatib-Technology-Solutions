@@ -53,6 +53,13 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     const ok = await verifyOtp(body.data.email, body.data.code);
     if (!ok) return reply.code(401).send({ error: "Invalid or expired code" });
 
+    // Checked before the upsert specifically so the frontend can tell a
+    // brand-new account from a returning login — createdAt/updatedAt aren't
+    // a reliable enough signal for that (Prisma sets @updatedAt from the
+    // same client Date as @default(now()) resolves from on create, but
+    // that's an implementation detail worth not depending on).
+    const isNewUser = !(await prisma.user.findUnique({ where: { email: body.data.email }, select: { id: true } }));
+
     const { fullName, phone, gender } = body.data;
     const user = await prisma.user.upsert({
       where: { email: body.data.email },
@@ -68,7 +75,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       path: "/",
       expires: tokens.refreshExpiresAt,
     });
-    return reply.send({ accessToken: tokens.accessToken, user: { id: user.id, status: user.status } });
+    return reply.send({ accessToken: tokens.accessToken, user: { id: user.id, status: user.status }, isNewUser });
   });
 
   app.post("/auth/google", async (request, reply) => {

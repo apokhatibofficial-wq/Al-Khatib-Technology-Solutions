@@ -11,6 +11,10 @@
   --color-ink-soft: #4a4a4a;
   --color-yellow: #f5c518;
   --color-border: #e0d8c4;
+  /* Added with the post-registration onboarding design (0808TAXI.pdf) —
+     a secondary accent alongside yellow, not a replacement for it. */
+  --color-green: #1c8641;
+  --color-green-soft: #e8f5ec;
 }
 
 @theme {
@@ -20,6 +24,8 @@
   --color-ink-soft: var(--color-ink-soft);
   --color-yellow: var(--color-yellow);
   --color-border: var(--color-border);
+  --color-green: var(--color-green);
+  --color-green-soft: var(--color-green-soft);
   --font-sans: "Cairo", "Tahoma", -apple-system, "Segoe UI", sans-serif;
 }
 

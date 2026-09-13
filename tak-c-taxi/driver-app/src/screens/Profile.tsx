@@ -6,6 +6,7 @@ import { uploadFile, fileUrl } from "../api/uploads";
 import { ApiError } from "../api/client";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
+import { DriverCapIcon } from "../components/BrandIcons";
 
 export function Profile() {
   const navigate = useNavigate();
@@ -71,7 +72,9 @@ export function Profile() {
           {user.photoFileId ? (
             <img src={fileUrl(user.photoFileId)} alt="" className="h-full w-full object-cover" />
           ) : (
-            <span className="flex h-full w-full items-center justify-center text-3xl">👤</span>
+            <span className="flex h-full w-full items-center justify-center bg-cream">
+              <DriverCapIcon size={56} />
+            </span>
           )}
           <span className="absolute inset-x-0 bottom-0 bg-ink/70 py-1 text-xs text-cream">
             {uploadingPhoto ? "..." : "تغيير"}

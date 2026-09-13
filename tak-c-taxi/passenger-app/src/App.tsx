@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { Splash } from "./screens/Splash";
 import { Login } from "./screens/Login";
+import { Onboarding } from "./screens/Onboarding";
 import { Home } from "./screens/Home";
 import { RequestRide } from "./screens/RequestRide";
 import { RideStatus } from "./screens/RideStatus";
@@ -27,6 +28,14 @@ export default function App() {
         <Routes>
           <Route path="/splash" element={<Splash />} />
           <Route path="/login" element={<Login />} />
+          <Route
+            path="/onboarding"
+            element={
+              <RequireAuth>
+                <Onboarding />
+              </RequireAuth>
+            }
+          />
           <Route path="/" element={<Root />} />
           <Route
             path="/request"

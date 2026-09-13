@@ -28,7 +28,7 @@ export function verifyOtp(
   email: string,
   code: string,
   fields: RegistrationFields,
-): Promise<{ accessToken: string; user: { id: string; status: string } }> {
+): Promise<{ accessToken: string; user: { id: string; status: string }; isNewUser: boolean }> {
   return api.post("/auth/otp/verify", { email, code, ...fields });
 }
 
